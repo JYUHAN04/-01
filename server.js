@@ -378,11 +378,14 @@ function defaultRealtimeState() {
       water: 0,
       totalWater: 0,
       lastWateredBy: "",
+      lastWateredById: "",
       history: []
     },
     doodle: {
       strokes: [],
-      savedAt: ""
+      savedAt: "",
+      savedBy: "",
+      savedById: ""
     },
     music: {
       playlist: [],
@@ -392,11 +395,41 @@ function defaultRealtimeState() {
       isPlaying: false,
       currentTime: 0,
       volume: 0.65,
-      updatedAt: ""
+      updatedAt: "",
+      updatedBy: "",
+      updatedById: ""
     },
     quiz: {
       active: null,
       reports: []
+    },
+    // [新增] 双人同步小游戏状态。
+    truthDare: {
+      category: "daily",
+      mode: "truth",
+      current: null,
+      recentIds: [],
+      updatedAt: ""
+    },
+    dateWheel: {
+      current: null,
+      recentIds: [],
+      rotation: 0,
+      updatedAt: ""
+    },
+    fortune: {
+      current: null,
+      recentIds: [],
+      updatedAt: ""
+    },
+    pulse: {
+      round: 1,
+      goal: 30,
+      total: 0,
+      scores: { A: 0, B: 0 },
+      lastActor: "",
+      lastActorName: "",
+      updatedAt: ""
     },
     lists: {
       travel: [],
@@ -493,6 +526,7 @@ function applyOperation(op) {
       realtime.tree.totalWater += amount;
       realtime.tree.level = Math.max(1, Math.floor(realtime.tree.totalWater / 8) + 1);
       realtime.tree.lastWateredBy = op.actor.name;
+      realtime.tree.lastWateredById = op.actor.id;
       realtime.tree.history = (realtime.tree.history || []).concat(withActor({ amount }, op, at)).slice(-80);
       break;
     }
@@ -515,6 +549,7 @@ function applyOperation(op) {
     case "doodle.saved":
       realtime.doodle.savedAt = at;
       realtime.doodle.savedBy = op.actor.name;
+      realtime.doodle.savedById = op.actor.id;
       break;
 
     case "music.state":
@@ -522,7 +557,8 @@ function applyOperation(op) {
         ...realtime.music,
         ...op.payload,
         updatedAt: at,
-        updatedBy: op.actor.name
+        updatedBy: op.actor.name,
+        updatedById: op.actor.id
       };
       break;
 
@@ -590,6 +626,79 @@ function applyOperation(op) {
       realtime.calmMemos = realtime.calmMemos.filter((item) => item.id !== op.payload.id);
       break;
 
+    // [新增] 双人同步小游戏操作。
+    case "truthDare.draw": {
+      const mode = op.payload.mode === "dare" ? "dare" : "truth";
+      const category = normalizeTruthDareCategory(op.payload.category);
+      realtime.truthDare = {
+        ...realtime.truthDare,
+        category,
+        mode,
+        current: withActor({
+          id: op.payload.item?.id || crypto.randomUUID(),
+          text: String(op.payload.item?.text || "").slice(0, 300),
+          category,
+          mode
+        }, op, at),
+        recentIds: Array.isArray(op.payload.recentIds) ? op.payload.recentIds.slice(-12).map(String) : [],
+        updatedAt: at
+      };
+      break;
+    }
+
+    case "dateWheel.spin":
+      realtime.dateWheel = {
+        ...realtime.dateWheel,
+        current: withActor({
+          id: op.payload.item?.id || crypto.randomUUID(),
+          text: String(op.payload.item?.text || "").slice(0, 120),
+          rotation: Number(op.payload.rotation || 0)
+        }, op, at),
+        rotation: Number(op.payload.rotation || 0),
+        recentIds: Array.isArray(op.payload.recentIds) ? op.payload.recentIds.slice(-8).map(String) : [],
+        updatedAt: at
+      };
+      break;
+
+    case "fortune.draw":
+      realtime.fortune = {
+        ...realtime.fortune,
+        current: withActor({
+          id: op.payload.item?.id || crypto.randomUUID(),
+          text: String(op.payload.item?.text || "").slice(0, 240)
+        }, op, at),
+        recentIds: Array.isArray(op.payload.recentIds) ? op.payload.recentIds.slice(-8).map(String) : [],
+        updatedAt: at
+      };
+      break;
+
+    case "pulse.tap": {
+      const amount = Math.max(1, Math.min(5, Number(op.payload.amount || 1)));
+      realtime.pulse ||= defaultRealtimeState().pulse;
+      realtime.pulse.scores ||= { A: 0, B: 0 };
+      realtime.pulse.scores[op.actor.id] = Number(realtime.pulse.scores[op.actor.id] || 0) + amount;
+      realtime.pulse.total = Number(realtime.pulse.total || 0) + amount;
+      realtime.pulse.goal = Math.max(20, Number(realtime.pulse.goal || 30));
+      if (realtime.pulse.total >= realtime.pulse.goal) {
+        realtime.pulse.round = Number(realtime.pulse.round || 1) + 1;
+        realtime.pulse.goal += 20;
+      }
+      realtime.pulse.lastActor = op.actor.id;
+      realtime.pulse.lastActorName = op.actor.name;
+      realtime.pulse.updatedAt = at;
+      break;
+    }
+
+    case "pulse.reset":
+      realtime.pulse = {
+        ...defaultRealtimeState().pulse,
+        round: Number(realtime.pulse?.round || 1) + 1,
+        lastActor: op.actor.id,
+        lastActorName: op.actor.name,
+        updatedAt: at
+      };
+      break;
+
     case "quiz.reset":
       realtime.quiz.active = {
         id: op.payload.id || crypto.randomUUID(),
@@ -638,6 +747,10 @@ function ensureList(list) {
 
 function normalizeListKey(list) {
   return ["travel", "dates", "shopping"].includes(list) ? list : "travel";
+}
+
+function normalizeTruthDareCategory(category) {
+  return ["daily", "sweet", "fun"].includes(category) ? category : "daily";
 }
 
 function updateById(list, id, update) {

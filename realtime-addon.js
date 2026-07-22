@@ -20,21 +20,138 @@
     activityTimer: null,
     queue: [],
     listTab: "travel",
+    truthDareCategory: "daily",
+    truthDareMode: "truth",
     selectedMood: "开心",
     lastLegacyHash: "",
     realtime: defaultRealtimeState(),
     presence: [],
     snapshotRevision: 0,
-    originalPersistNow: null
+    originalPersistNow: null,
+    identityTextOriginals: new WeakMap(),
+    gameFlash: "",
+    gameFlashTimer: null
   };
 
+  // [新增] 动态身份称谓与题库配置：A/B 只作为数据角色，页面始终按当前账号渲染“我/宝宝”。
+  const ROLE_IDS = ["A", "B"];
+  const ROLE_FALLBACK = { A: "角色A", B: "角色B" };
+
   const quizQuestions = [
-    { id: "q1", text: "对方压力大时最想要什么？", options: ["安静陪伴", "马上解决", "出去散心"] },
-    { id: "q2", text: "最理想的周末约会是？", options: ["宅家做饭", "城市散步", "短途旅行"] },
-    { id: "q3", text: "收到哪种小惊喜最开心？", options: ["手写文字", "实用礼物", "突然见面"] },
-    { id: "q4", text: "吵架后最需要哪句话？", options: ["我在听你说", "我们慢慢来", "抱抱好不好"] },
-    { id: "q5", text: "纪念日更想怎么过？", options: ["仪式感晚餐", "拍照记录", "只要在一起"] },
-    { id: "q6", text: "未来最期待一起完成什么？", options: ["布置小家", "看很多风景", "攒一笔基金"] }
+    { id: "q1", category: "日常温柔", text: "压力大时最想被怎样陪着？", options: ["安静陪伴", "一起拆解问题", "出门散散心"] },
+    { id: "q2", category: "日常温柔", text: "最理想的周末节奏是？", options: ["宅家做饭", "城市散步", "短途旅行"] },
+    { id: "q3", category: "日常温柔", text: "收到哪种小惊喜最开心？", options: ["手写文字", "实用礼物", "突然见面"] },
+    { id: "q4", category: "日常温柔", text: "吵架后最需要哪句话？", options: ["我在听你说", "我们慢慢来", "抱抱好不好"] },
+    { id: "q5", category: "甜蜜暧昧", text: "纪念日更想怎么过？", options: ["仪式感晚餐", "拍照记录", "只要在一起"] },
+    { id: "q6", category: "甜蜜暧昧", text: "最喜欢哪种亲密小动作？", options: ["牵手", "拥抱", "摸摸头"] },
+    { id: "q7", category: "甜蜜暧昧", text: "最容易被哪句话哄好？", options: ["我想你了", "你对我很重要", "我们一起慢慢来"] },
+    { id: "q8", category: "甜蜜暧昧", text: "下一次见面最想先做什么？", options: ["抱很久", "吃一顿饭", "拍合照"] },
+    { id: "q9", category: "趣味整活", text: "如果一起开店，最像开什么店？", options: ["甜品店", "小酒馆", "花店"] },
+    { id: "q10", category: "趣味整活", text: "谁更可能半夜突然想吃夜宵？", options: ["我", "宝宝", "都可能"] },
+    { id: "q11", category: "趣味整活", text: "旅行中更像谁负责导航？", options: ["我", "宝宝", "一起迷路也快乐"] },
+    { id: "q12", category: "未来想象", text: "未来最期待一起完成什么？", options: ["布置小家", "看很多风景", "攒一笔基金"] }
+  ];
+
+  const truthDareDecks = {
+    daily: {
+      label: "日常温柔",
+      truth: [
+        "最近哪一刻觉得被认真爱着？",
+        "今天最想收到宝宝哪种回应？",
+        "哪件小事会让你一整天心情变好？",
+        "最近有没有一句话想让我多听几遍？",
+        "什么时候会特别需要安静陪伴？",
+        "你觉得我们最默契的生活习惯是什么？",
+        "最近一次偷偷心软是因为什么？",
+        "如果今天只剩十分钟聊天，你最想聊什么？",
+        "你希望我下次见面提前准备什么？",
+        "最喜欢我们相处里的哪个细节？"
+      ],
+      dare: [
+        "给宝宝发一句今天限定夸夸。",
+        "用三个词形容现在的心情。",
+        "说一个下次见面想完成的小约定。",
+        "发一张此刻身边的小物件照片。",
+        "给宝宝安排一个明天的小提醒。",
+        "写一句睡前安心留言。",
+        "用一句话描述今天最想分享的画面。",
+        "立刻保存一个共同清单事项。",
+        "给恋爱小树浇一次水。",
+        "发送一次思念提醒。"
+      ]
+    },
+    sweet: {
+      label: "甜蜜暧昧",
+      truth: [
+        "第一次明显心动是在什么时候？",
+        "最想被宝宝怎么叫你？",
+        "哪种靠近会让你最没有抵抗力？",
+        "如果今晚能梦到宝宝，希望梦见什么？",
+        "最喜欢宝宝身上的哪个反差？",
+        "哪一句情话你听了会装淡定但很开心？",
+        "下次拥抱想抱多久？",
+        "最想和宝宝拍哪一种合照？",
+        "哪次聊天让你后来还反复想起？",
+        "如果写一张小纸条藏起来，会写什么？"
+      ],
+      dare: [
+        "发一句不许撤回的直球情话。",
+        "给宝宝起一个今晚限定昵称。",
+        "用语音说一句“我想你了”。",
+        "描述一个理想的下次见面开场。",
+        "给宝宝发送一个全屏思念提醒。",
+        "写下一个只属于你们的暗号。",
+        "说出一个想一起解锁的约会动作。",
+        "把下一次约会计划加入清单。",
+        "给宝宝一个 20 秒远程抱抱倒计时。",
+        "用五个字以内夸宝宝。"
+      ]
+    },
+    fun: {
+      label: "趣味整活",
+      truth: [
+        "谁更像家里的气氛组？",
+        "如果宝宝变成表情包，会是哪一个？",
+        "你们谁更容易嘴硬心软？",
+        "如果一起上综艺，会是什么人设？",
+        "谁更可能在超市买一堆计划外零食？",
+        "给宝宝的可爱程度打几分，为什么超过满分？",
+        "如果恋爱小树会说话，它会吐槽什么？",
+        "谁更适合掌管旅行路线？",
+        "如果今天互换身份，第一件事会做什么？",
+        "哪件小事最像你们专属笑点？"
+      ],
+      dare: [
+        "发一个最不像自己的可爱语气包。",
+        "给宝宝布置一个一分钟内能完成的小任务。",
+        "用夸张主持人口吻宣布今天的喜欢值。",
+        "抽一个共同购物清单里的奇怪愿望。",
+        "给下一次约会取一个综艺名。",
+        "用三个 emoji 讲今天的心情。",
+        "说一句土味情话，但要真诚。",
+        "给宝宝颁一个今日限定奖项。",
+        "把当前默契分数截图发给宝宝。",
+        "立刻点亮一次心动接力。"
+      ]
+    }
+  };
+
+  const dateWheelOptions = [
+    "奶茶散步", "一起看电影", "视频做饭", "云逛超市", "互写小纸条",
+    "计划下一次旅行", "睡前语音十分钟", "一起整理相册", "周末早午餐", "随机城市漫步"
+  ];
+
+  const fortuneNotes = [
+    "今天适合多说一句喜欢。",
+    "下次见面先抱一下再说话。",
+    "把一个小愿望放进清单，它会慢慢实现。",
+    "今晚的好运来自一次主动分享。",
+    "适合给宝宝一个认真夸夸。",
+    "今天的关系关键词是：耐心。",
+    "适合安排一个只属于你们的小仪式。",
+    "想念不用攒着，发出去会更甜。",
+    "今天可以把争执换成拥抱后的复盘。",
+    "默契会在一次次回应里长出来。"
   ];
 
   const moodOptions = ["开心", "想你", "疲惫", "委屈", "期待"];
@@ -113,6 +230,7 @@
     wrapRenderFunction("renderTools");
     wrapRenderFunction("renderGames");
     wrapRenderFunction("renderSettings");
+    wrapOriginalGameFeedback();
   }
 
   function wrapRenderFunction(name) {
@@ -128,6 +246,29 @@
     } catch (error) {
       console.warn(`Realtime wrapper cannot hook ${name}.`, error);
     }
+  }
+
+  // [修改] 原有小游戏增强：只包裹旧函数增加反馈，不改动原页面逻辑。
+  function wrapOriginalGameFeedback() {
+    [
+      ["rollDice", "飞行棋已前进，状态会自动同步。"],
+      ["spinWheel", "约会转盘已转动，结果会自动同步。"]
+    ].forEach(([name, message]) => {
+      try {
+        const original = window[name];
+        if (typeof original !== "function" || original.__rtGameWrapped) return;
+        window[name] = function realtimeGameFeedbackWrapper() {
+          const result = original.apply(this, arguments);
+          triggerGameFlash(name === "rollDice" ? "飞行棋" : "转盘");
+          toast(message);
+          scheduleLegacySync(message);
+          return result;
+        };
+        window[name].__rtGameWrapped = true;
+      } catch (error) {
+        console.warn(`Realtime wrapper cannot hook ${name}.`, error);
+      }
+    });
   }
 
   function bindEvents() {
@@ -164,6 +305,19 @@
       if (action === "list-delete") deleteSharedListItem(target.dataset.list, target.dataset.id);
       if (action === "calm-add") addCalmMemo();
       if (action === "calm-delete") deleteCalmMemo(target.dataset.id);
+      if (action === "td-category") {
+        app.truthDareCategory = target.dataset.category || "daily";
+        renderAddon();
+      }
+      if (action === "td-mode") {
+        app.truthDareMode = target.dataset.mode || "truth";
+        renderAddon();
+      }
+      if (action === "td-draw") drawTruthDare();
+      if (action === "date-wheel-spin") spinDateWheel();
+      if (action === "fortune-draw") drawFortune();
+      if (action === "pulse-tap") tapPulse();
+      if (action === "pulse-reset") resetPulse();
       if (action === "quiz-answer") answerQuiz(target.dataset.question, target.dataset.answer);
       if (action === "quiz-reset") resetQuiz();
       if (action === "push-now") scheduleLegacySync("手动同步原有功能");
@@ -211,7 +365,7 @@
       restoreQueue();
       localStorage.setItem(AUTH_KEY, JSON.stringify({ token: app.token, user: app.user }));
       hideAccountLayer();
-      toast(`${app.user.name} 已登录，实时同步开启。`);
+      toast(`${roleLabel(app.user.id)}已登录，实时同步开启。`);
       applySnapshot(result.snapshot || {}, false);
       connectSocket();
     } catch (error) {
@@ -423,7 +577,7 @@
       applyLegacyState(op.payload && op.payload.data, true);
     } else {
       reduceRealtimeOperation(op);
-      if (op.type === "miss-you") showHeartBlast(op.actor && op.actor.name, op.payload && op.payload.message);
+      if (op.type === "miss-you") showHeartBlast(op.actor, op.payload && op.payload.message);
       if (op.type === "music.state") applyMusicToElement();
     }
 
@@ -576,6 +730,7 @@
       realtime.tree.totalWater += amount;
       realtime.tree.level = Math.max(1, Math.floor(realtime.tree.totalWater / 8) + 1);
       realtime.tree.lastWateredBy = actorName;
+      realtime.tree.lastWateredById = actorId;
       realtime.tree.history = (realtime.tree.history || []).concat(withActor({ amount }, op, at)).slice(-80);
     }
 
@@ -597,6 +752,7 @@
     if (op.type === "doodle.saved") {
       realtime.doodle.savedAt = at;
       realtime.doodle.savedBy = actorName;
+      realtime.doodle.savedById = actorId;
     }
 
     if (op.type === "music.addTrack") {
@@ -616,7 +772,7 @@
     }
 
     if (op.type === "music.state") {
-      realtime.music = { ...realtime.music, ...payload, updatedAt: at, updatedBy: actorName };
+      realtime.music = { ...realtime.music, ...payload, updatedAt: at, updatedBy: actorName, updatedById: actorId };
     }
 
     if (op.type === "miss-you") {
@@ -664,6 +820,70 @@
       realtime.calmMemos = realtime.calmMemos.filter((item) => item.id !== payload.id);
     }
 
+    // [新增] 趣味互动操作：真心话大冒险、同步约会转盘、甜蜜抽签、心动接力。
+    if (op.type === "truthDare.draw") {
+      realtime.truthDare = {
+        ...realtime.truthDare,
+        category: normalizeTruthDareCategory(payload.category),
+        mode: payload.mode === "dare" ? "dare" : "truth",
+        current: withActor({
+          id: payload.item && payload.item.id || uuid(),
+          text: payload.item && payload.item.text || "",
+          category: normalizeTruthDareCategory(payload.category),
+          mode: payload.mode === "dare" ? "dare" : "truth"
+        }, op, at),
+        recentIds: Array.isArray(payload.recentIds) ? payload.recentIds.slice(-12) : [],
+        updatedAt: at
+      };
+    }
+
+    if (op.type === "dateWheel.spin") {
+      realtime.dateWheel = {
+        ...realtime.dateWheel,
+        current: withActor({
+          id: payload.item && payload.item.id || uuid(),
+          text: payload.item && payload.item.text || "",
+          rotation: Number(payload.rotation || 0)
+        }, op, at),
+        rotation: Number(payload.rotation || 0),
+        recentIds: Array.isArray(payload.recentIds) ? payload.recentIds.slice(-8) : [],
+        updatedAt: at
+      };
+    }
+
+    if (op.type === "fortune.draw") {
+      realtime.fortune = {
+        ...realtime.fortune,
+        current: withActor({
+          id: payload.item && payload.item.id || uuid(),
+          text: payload.item && payload.item.text || ""
+        }, op, at),
+        recentIds: Array.isArray(payload.recentIds) ? payload.recentIds.slice(-8) : [],
+        updatedAt: at
+      };
+    }
+
+    if (op.type === "pulse.tap") {
+      realtime.pulse ||= defaultPulseState();
+      const amount = Math.max(1, Math.min(5, Number(payload.amount || 1)));
+      realtime.pulse.scores ||= { A: 0, B: 0 };
+      realtime.pulse.scores[actorId] = Number(realtime.pulse.scores[actorId] || 0) + amount;
+      realtime.pulse.total = Number(realtime.pulse.total || 0) + amount;
+      realtime.pulse.goal = Math.max(20, Number(realtime.pulse.goal || 30));
+      if (realtime.pulse.total >= realtime.pulse.goal) {
+        realtime.pulse.round = Number(realtime.pulse.round || 1) + 1;
+        realtime.pulse.goal += 20;
+      }
+      realtime.pulse.lastActor = actorId;
+      realtime.pulse.lastActorName = actorName;
+      realtime.pulse.updatedAt = at;
+      triggerGameFlash(`${roleLabel(actorId)} +${amount}`);
+    }
+
+    if (op.type === "pulse.reset") {
+      realtime.pulse = { ...defaultPulseState(), round: Number(realtime.pulse && realtime.pulse.round || 1) + 1, updatedAt: at, lastActor: actorId, lastActorName: actorName };
+    }
+
     if (op.type === "quiz.reset") {
       realtime.quiz.active = {
         id: payload.id || uuid(),
@@ -700,6 +920,7 @@
     setupDoodleCanvas();
     applyTheme(app.realtime.theme || "macaron");
     applyMusicToElement();
+    applyDynamicIdentityLabels();
   }
 
   function deferRender() {
@@ -718,7 +939,7 @@
     root.innerHTML = `
       <section class="section-head">
         <h2>实时双人互动</h2>
-        <p>在线、思念、心情、小任务和恋爱小树都会同步到对方屏幕。</p>
+        <p>在线、思念、心情、小任务和恋爱小树都会同步到${esc(roleLabel(otherRoleId()))}屏幕。</p>
       </section>
       <div class="rt-grid two">
         <div class="panel rt-stack">
@@ -729,7 +950,7 @@
           <div class="rt-presence-list">${renderPresenceRows()}</div>
           <div class="rt-inline">
             <button class="primary" data-rt="miss-you">${safeIcon("play")}发送思念</button>
-            <span class="rt-meta">对方会收到全屏爱心提醒</span>
+            <span class="rt-meta">${esc(roleLabel(otherRoleId()))}会收到全屏爱心提醒</span>
           </div>
         </div>
         <div class="panel rt-stack">
@@ -742,7 +963,7 @@
           </div>
           <label>
             今天想补一句
-            <textarea id="rtMoodNote" placeholder="写给对方看的心情小纸条">${esc(myMood && myMood.note || "")}</textarea>
+            <textarea id="rtMoodNote" placeholder="写给${esc(roleLabel(otherRoleId()))}看的心情小纸条">${esc(myMood && myMood.note || "")}</textarea>
           </label>
           <button class="primary" data-rt="mood-save">${safeIcon("save")}保存今日心情</button>
           <div class="rt-grid two">${renderMoodCards(moods)}</div>
@@ -776,7 +997,7 @@
           <div class="progress-track"><div class="progress-fill" style="width:${treeProgress()}%"></div></div>
           <div class="rt-inline">
             <button class="primary" data-rt="tree-water">一起浇水</button>
-            <span class="rt-meta">累计 ${app.realtime.tree.totalWater} 滴，上次 ${esc(app.realtime.tree.lastWateredBy || "还没有浇水")}</span>
+            <span class="rt-meta">累计 ${app.realtime.tree.totalWater} 滴，上次 ${esc(app.realtime.tree.lastWateredById ? displayActor(app.realtime.tree.lastWateredById, app.realtime.tree.lastWateredBy) : "还没有浇水")}</span>
           </div>
         </div>
       </div>
@@ -820,7 +1041,7 @@
           <button class="primary" data-rt="doodle-save">${safeIcon("save")}保存到相册</button>
         </div>
         <canvas id="rtDoodleCanvas" width="1200" height="750"></canvas>
-        <p class="small-note">已同步 ${app.realtime.doodle.strokes.length} 笔${app.realtime.doodle.savedBy ? `，上次由 ${esc(app.realtime.doodle.savedBy)} 保存` : ""}。</p>
+        <p class="small-note">已同步 ${app.realtime.doodle.strokes.length} 笔${app.realtime.doodle.savedBy ? `，上次由 ${esc(displayActor(app.realtime.doodle.savedById, app.realtime.doodle.savedBy))} 保存` : ""}。</p>
       </div>
     `;
   }
@@ -837,7 +1058,7 @@
         <div class="panel rt-stack">
           <div class="rt-card-title">
             <h3>同步音乐播放器</h3>
-            <span>${esc(app.realtime.music.updatedBy || "等待切歌")}</span>
+            <span>${esc(app.realtime.music.updatedById ? displayActor(app.realtime.music.updatedById, app.realtime.music.updatedBy) : "等待切歌")}</span>
           </div>
           <div class="rt-music-now">${esc(app.realtime.music.title || "还没有选择音乐")}</div>
           <audio id="rtMusicAudio" class="rt-audio" controls></audio>
@@ -888,10 +1109,56 @@
     const active = app.realtime.quiz.active || { answers: {} };
     root.innerHTML = `
       <section class="section-head">
-        <h2>双人默契答题</h2>
-        <p>两个人各自作答，完成后自动生成默契分数报告。</p>
+        <h2>双人互动游戏</h2>
+        <p>真心话大冒险、约会转盘、甜蜜抽签、心动接力和默契测试都会实时同步。</p>
       </section>
-      <div class="panel rt-stack">
+      <div class="rt-grid two">
+        <div class="panel rt-stack">
+          <div class="rt-card-title">
+            <h3>真心话大冒险</h3>
+            <span>${esc(truthDareDecks[app.truthDareCategory]?.label || "日常温柔")}</span>
+          </div>
+          <div class="rt-list-tabs">
+            ${Object.entries(truthDareDecks).map(([key, deck]) => `<button class="${app.truthDareCategory === key ? "active" : ""}" data-rt="td-category" data-category="${key}">${esc(deck.label)}</button>`).join("")}
+          </div>
+          <div class="rt-theme-toggle">
+            <button class="${app.truthDareMode !== "dare" ? "active" : ""}" data-rt="td-mode" data-mode="truth">真心话</button>
+            <button class="${app.truthDareMode === "dare" ? "active" : ""}" data-rt="td-mode" data-mode="dare">大冒险</button>
+          </div>
+          ${renderTruthDareCard()}
+          <button class="primary" data-rt="td-draw">${safeIcon("refresh")}抽一题</button>
+        </div>
+        <div class="panel rt-stack">
+          <div class="rt-card-title">
+            <h3>同步约会转盘</h3>
+            <span>${dateWheelOptions.length} 个灵感</span>
+          </div>
+          ${renderDateWheel()}
+          <button class="primary" data-rt="date-wheel-spin">${safeIcon("refresh")}转一下</button>
+        </div>
+      </div>
+      <div class="rt-grid two rt-section">
+        <div class="panel rt-stack">
+          <div class="rt-card-title">
+            <h3>甜蜜抽签</h3>
+            <span>今日小签文</span>
+          </div>
+          ${renderFortuneCard()}
+          <button class="primary" data-rt="fortune-draw">${safeIcon("play")}抽一签</button>
+        </div>
+        <div class="panel rt-stack">
+          <div class="rt-card-title">
+            <h3>异地心动接力</h3>
+            <span>第 ${Number(app.realtime.pulse?.round || 1)} 轮</span>
+          </div>
+          ${renderPulseGame()}
+          <div class="rt-inline">
+            <button class="primary" data-rt="pulse-tap">${safeIcon("plus")}点亮一下</button>
+            <button class="ghost" data-rt="pulse-reset">开启新一轮</button>
+          </div>
+        </div>
+      </div>
+      <div class="panel rt-stack rt-section">
         <div class="rt-card-title">
           <h3>默契测试</h3>
           <button class="ghost" data-rt="quiz-reset">重新开始</button>
@@ -914,7 +1181,7 @@
         <div class="panel rt-stack">
           <div class="rt-card-title">
             <h3>情侣账号</h3>
-            <span>${app.user ? esc(app.user.name) : "未登录"}</span>
+            <span>${app.user ? `当前：${esc(roleLabel(app.user.id))}` : "未登录"}</span>
           </div>
           <p class="small-note">原访问密码仍由原设置页维护；情侣 A/B 账号由服务器 .env 配置。</p>
           <div class="rt-inline">
@@ -937,36 +1204,37 @@
   }
 
   function renderPresenceRows() {
-    const rows = app.presence.length ? app.presence : [
-      { id: "A", name: "情侣A", online: app.user && app.user.id === "A", activity: "等待连接" },
-      { id: "B", name: "情侣B", online: app.user && app.user.id === "B", activity: "等待连接" }
-    ];
+    const rows = ROLE_IDS.map((id) => app.presence.find((item) => item.id === id) || {
+      id,
+      name: ROLE_FALLBACK[id],
+      online: app.user && app.user.id === id,
+      activity: "等待连接"
+    });
 
     return rows.map((item) => `
       <div class="rt-presence-row">
         <span class="rt-dot ${item.online ? "online" : ""}"></span>
-        <strong>${esc(item.name)}${app.user && app.user.id === item.id ? "（我）" : ""}</strong>
+        <strong>${esc(roleLabel(item.id))}</strong>
         <span class="rt-meta">${item.online ? esc(item.activity || "在线") : "离线"}</span>
       </div>
     `).join("");
   }
 
   function renderMoodCards(moods) {
-    const ids = ["A", "B"];
-    return ids.map((id) => {
+    return ROLE_IDS.map((id) => {
       const item = moods[id];
       return `
         <div class="rt-item">
-          <strong>${id === "A" ? "情侣A" : "情侣B"}：${esc(item && item.mood || "未打卡")}</strong>
+          <strong>${esc(roleLabel(id))}：${esc(item && item.mood || "未打卡")}</strong>
           <p>${esc(item && item.note || "今天还没有留下心情。")}</p>
-          ${item ? `<span class="rt-badge rt-actor-tag">${esc(item.actorName || id)}</span>` : ""}
+          ${item ? `<span class="rt-badge rt-actor-tag">${esc(displayActor(item.actor, item.actorName))}</span>` : ""}
         </div>
       `;
     }).join("");
   }
 
   function renderSweetTasks() {
-    if (!app.realtime.tasks.length) return `<div class="empty">还没有小任务，发一个给对方吧。</div>`;
+    if (!app.realtime.tasks.length) return `<div class="empty">还没有小任务，发一个给${esc(roleLabel(otherRoleId()))}吧。</div>`;
     return app.realtime.tasks.slice(0, 12).map((item) => `
       <div class="rt-item ${item.done ? "done" : ""}">
         <strong>${esc(item.title || "未命名任务")}</strong>
@@ -974,7 +1242,7 @@
         <div class="rt-inline">
           <button class="ghost" data-rt="task-toggle" data-id="${esc(item.id)}" data-done="${item.done ? "true" : "false"}">${item.done ? "恢复" : "完成"}</button>
           <button class="danger" data-rt="task-delete" data-id="${esc(item.id)}">删除</button>
-          <span class="rt-badge">${esc(item.actorName || item.updatedBy || "我们")}</span>
+          <span class="rt-badge">${esc(displayActor(item.actor, item.actorName || item.updatedBy || "我们"))}</span>
         </div>
       </div>
     `).join("");
@@ -989,7 +1257,7 @@
         <div class="rt-inline">
           <button class="primary" data-rt="music-select" data-id="${esc(item.id)}">${safeIcon("play")}切换</button>
           <button class="danger" data-rt="music-delete" data-id="${esc(item.id)}">删除</button>
-          <span class="rt-badge">${esc(item.actorName || "我们")}</span>
+          <span class="rt-badge">${esc(displayActor(item.actor, item.actorName || "我们"))}</span>
         </div>
       </div>
     `).join("");
@@ -1005,7 +1273,7 @@
         <div class="rt-inline">
           <button class="ghost" data-rt="list-toggle" data-list="${key}" data-id="${esc(item.id)}" data-done="${item.done ? "true" : "false"}">${item.done ? "恢复" : "完成"}</button>
           <button class="danger" data-rt="list-delete" data-list="${key}" data-id="${esc(item.id)}">删除</button>
-          <span class="rt-badge">${esc(item.actorName || "我们")}</span>
+          <span class="rt-badge">${esc(displayActor(item.actor, item.actorName || "我们"))}</span>
         </div>
       </div>
     `).join("");
@@ -1019,22 +1287,106 @@
         <p>${esc(item.text)}</p>
         <div class="rt-inline">
           <button class="danger" data-rt="calm-delete" data-id="${esc(item.id)}">删除</button>
-          <span class="rt-badge">${esc(item.actorName || "我们")}</span>
+          <span class="rt-badge">${esc(displayActor(item.actor, item.actorName || "我们"))}</span>
         </div>
       </div>
     `).join("");
   }
 
+  // [新增] 游戏卡片渲染：所有操作结果都从 realtime 状态读取，支持双端同步。
+  function renderTruthDareCard() {
+    const current = app.realtime.truthDare && app.realtime.truthDare.current;
+    if (!current) {
+      return `<div class="rt-game-result">先选分类，再抽一题。系统会避开最近抽过的题。</div>`;
+    }
+    return `
+      <div class="rt-game-result">
+        <span class="rt-badge">${esc(truthDareDecks[current.category]?.label || "题目")} · ${current.mode === "dare" ? "大冒险" : "真心话"}</span>
+        <strong>${esc(current.text)}</strong>
+        <small>${esc(displayActor(current.actor, current.actorName))} 抽到</small>
+      </div>
+    `;
+  }
+
+  function renderDateWheel() {
+    const wheel = app.realtime.dateWheel || {};
+    const current = wheel.current;
+    const rotation = Number(wheel.rotation || 0);
+    return `
+      <div class="rt-wheel-shell">
+        <div class="rt-date-wheel" style="--rt-wheel-rotation:${rotation}deg">
+          <span>约会</span>
+        </div>
+        <div class="rt-game-result compact">
+          <strong>${esc(current && current.text || "等待转出今晚灵感")}</strong>
+          <small>${current ? `${esc(displayActor(current.actor, current.actorName))} 转出` : "双方看到同一个结果"}</small>
+        </div>
+      </div>
+      <div class="rt-option-cloud">
+        ${dateWheelOptions.slice(0, 8).map((item) => `<span>${esc(item)}</span>`).join("")}
+      </div>
+    `;
+  }
+
+  function renderFortuneCard() {
+    const current = app.realtime.fortune && app.realtime.fortune.current;
+    return `
+      <div class="rt-game-result">
+        <span class="rt-badge">小签文</span>
+        <strong>${esc(current && current.text || "还没有抽签，今天的甜蜜答案等你翻开。")}</strong>
+        <small>${current ? `${esc(displayActor(current.actor, current.actorName))} 抽到` : "抽签会同步到两个人屏幕"}</small>
+      </div>
+    `;
+  }
+
+  function renderPulseGame() {
+    const pulse = app.realtime.pulse || defaultPulseState();
+    const scores = pulse.scores || {};
+    const total = Number(pulse.total || 0);
+    const goal = Math.max(1, Number(pulse.goal || 30));
+    const progress = Math.min(100, Math.round(total / goal * 100));
+    const aScore = Number(scores.A || 0);
+    const bScore = Number(scores.B || 0);
+    const totalScores = Math.max(1, aScore + bScore);
+    return `
+      <div class="rt-pulse-stage ${app.gameFlash ? "is-flashing" : ""}">
+        <div class="rt-pulse-heart">♡</div>
+        <strong>${total} / ${goal}</strong>
+        <span>${pulse.lastActor ? `${esc(displayActor(pulse.lastActor, pulse.lastActorName))} 刚刚点亮` : "一起把心动值点满"}</span>
+        ${app.gameFlash ? `<em>${esc(app.gameFlash)}</em>` : ""}
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div>
+      <div class="rt-pulse-scores">
+        <div>
+          <span>${esc(roleLabel("A"))}</span>
+          <div class="rt-score-bar"><i style="width:${Math.round(aScore / totalScores * 100)}%"></i></div>
+          <strong>${aScore}</strong>
+        </div>
+        <div>
+          <span>${esc(roleLabel("B"))}</span>
+          <div class="rt-score-bar"><i style="width:${Math.round(bScore / totalScores * 100)}%"></i></div>
+          <strong>${bScore}</strong>
+        </div>
+      </div>
+    `;
+  }
+
   function renderQuizQuestion(question, index, active) {
     const mine = app.user && active.answers && active.answers[app.user.id] && active.answers[app.user.id][question.id];
+    const otherId = otherRoleId();
+    const other = otherId && active.answers && active.answers[otherId] && active.answers[otherId][question.id];
     return `
       <div class="rt-item">
-        <strong>${index + 1}. ${esc(question.text)}</strong>
+        <div class="rt-card-title">
+          <strong>${index + 1}. ${esc(question.text)}</strong>
+          <span>${esc(question.category || "默契")}</span>
+        </div>
         <div class="rt-quiz-options">
           ${question.options.map((option) => `
             <button class="${mine && mine.answer === option ? "active" : ""}" data-rt="quiz-answer" data-question="${question.id}" data-answer="${esc(option)}">${esc(option)}</button>
           `).join("")}
         </div>
+        <p class="rt-meta">${esc(roleLabel(app.user && app.user.id))}：${esc(mine ? mine.answer : "未答")} · ${esc(roleLabel(otherId))}：${esc(other ? other.answer : "未答")}</p>
       </div>
     `;
   }
@@ -1047,10 +1399,12 @@
     const same = both.filter((q) => a[q.id].answer === b[q.id].answer);
     const score = both.length ? Math.round(same.length / quizQuestions.length * 100) : 0;
     const done = both.length === quizQuestions.length;
+    const diff = both.filter((q) => a[q.id].answer !== b[q.id].answer).slice(0, 3);
 
     return `
       <div class="tool-result">
-        已共同完成 ${both.length} / ${quizQuestions.length} 题。${done ? `默契分数 ${score} 分，${score >= 80 ? "非常同频" : score >= 50 ? "还有很多可爱差异" : "适合认真聊聊彼此的小习惯"}。` : "等两个人都答完后自动出报告。"}
+        已共同完成 ${both.length} / ${quizQuestions.length} 题。${done ? `默契分数 ${score} 分，${score >= 80 ? "非常同频" : score >= 50 ? "有很多可爱差异" : "适合认真聊聊彼此的小习惯"}。` : "等两个人都答完后自动出报告。"}
+        ${diff.length ? `<p class="rt-meta">可爱分歧：${diff.map((q) => esc(q.text)).join(" / ")}</p>` : ""}
       </div>
     `;
   }
@@ -1133,9 +1487,9 @@
 
   function updateConnectionStatus(text) {
     setText("rtConnectStatus", text || (app.connected ? "实时同步已连接" : navigator.onLine ? "实时同步未连接" : "离线缓存中"));
-    setText("rtAccountStatus", app.user ? `当前：${app.user.name}` : "未登录情侣账号");
+    setText("rtAccountStatus", app.user ? `当前：${roleLabel(app.user.id)}` : "未登录情侣账号");
     const other = app.presence.find((item) => app.user && item.id !== app.user.id);
-    setText("rtOtherStatus", other && other.online ? `${other.name} 在线` : "对方离线");
+    setText("rtOtherStatus", other && other.online ? `${roleLabel(other.id)}在线` : `${roleLabel(otherRoleId())}离线`);
   }
 
   function setupDoodleCanvas() {
@@ -1337,16 +1691,21 @@
   }
 
   function sendMissYou() {
-    const messages = ["我想你啦", "想马上见到你", "给你一个远程抱抱", "今天也很喜欢你"];
+    if (!app.user) {
+      sendOperation("miss-you", { id: uuid(), message: "我想你啦" });
+      return;
+    }
+    const baby = roleLabel(otherRoleId());
+    const messages = [`我想${baby}啦`, `想马上见到${baby}`, `给${baby}一个远程抱抱`, `今天也很喜欢${baby}`];
     const message = messages[Math.floor(Math.random() * messages.length)];
     sendOperation("miss-you", { id: uuid(), message });
-    showHeartBlast(app.user && app.user.name, message);
+    showHeartBlast(app.user, message);
   }
 
-  function showHeartBlast(actorName, message) {
+  function showHeartBlast(actor, message) {
     const blast = document.createElement("div");
     blast.className = "rt-heart-blast";
-    blast.innerHTML = `<strong>${esc(actorName || "对方")}：${esc(message || "我想你啦")}</strong>`;
+    blast.innerHTML = `<strong>${esc(displayActor(actor, actor && actor.name))}：${esc(message || "我想你啦")}</strong>`;
     for (let index = 0; index < 32; index += 1) {
       const heart = document.createElement("span");
       heart.className = "rt-heart";
@@ -1433,6 +1792,45 @@
     sendOperation("calm.delete", { id });
   }
 
+  function drawTruthDare() {
+    const category = normalizeTruthDareCategory(app.truthDareCategory);
+    const mode = app.truthDareMode === "dare" ? "dare" : "truth";
+    const pool = getTruthDarePool(category, mode);
+    const item = pickWithoutRecent(pool, app.realtime.truthDare && app.realtime.truthDare.recentIds);
+    if (!item) return;
+    const recentIds = updateRecentIds(app.realtime.truthDare && app.realtime.truthDare.recentIds, item.id, 12);
+    sendOperation("truthDare.draw", { category, mode, item, recentIds });
+    triggerGameFlash(mode === "dare" ? "大冒险！" : "真心话！");
+  }
+
+  function spinDateWheel() {
+    const pool = dateWheelOptions.map((text, index) => ({ id: `date-${index}`, text }));
+    const item = pickWithoutRecent(pool, app.realtime.dateWheel && app.realtime.dateWheel.recentIds);
+    if (!item) return;
+    const previous = Number(app.realtime.dateWheel && app.realtime.dateWheel.rotation || 0);
+    const rotation = previous + 720 + Math.floor(Math.random() * 360);
+    const recentIds = updateRecentIds(app.realtime.dateWheel && app.realtime.dateWheel.recentIds, item.id, 8);
+    sendOperation("dateWheel.spin", { item, rotation, recentIds });
+    triggerGameFlash("转盘启动");
+  }
+
+  function drawFortune() {
+    const pool = fortuneNotes.map((text, index) => ({ id: `fortune-${index}`, text }));
+    const item = pickWithoutRecent(pool, app.realtime.fortune && app.realtime.fortune.recentIds);
+    if (!item) return;
+    const recentIds = updateRecentIds(app.realtime.fortune && app.realtime.fortune.recentIds, item.id, 8);
+    sendOperation("fortune.draw", { item, recentIds });
+    triggerGameFlash("甜蜜签文");
+  }
+
+  function tapPulse() {
+    sendOperation("pulse.tap", { amount: 1 });
+  }
+
+  function resetPulse() {
+    sendOperation("pulse.reset", {});
+  }
+
   function answerQuiz(questionId, answer) {
     sendOperation("quiz.answer", { questionId, answer });
   }
@@ -1442,7 +1840,7 @@
   }
 
   function notifyRemote(op) {
-    const actor = op.actor && op.actor.name || "对方";
+    const actor = displayActor(op.actor, op.actor && op.actor.name);
     const map = {
       "legacy.replace": "更新了原有页面内容",
       "mood.check": "完成了今日情绪打卡",
@@ -1456,6 +1854,11 @@
       "miss-you": "发送了思念提醒",
       "list.add": "更新了共享清单",
       "calm.add": "写下了冷静备忘录",
+      "truthDare.draw": "抽了一题真心话大冒险",
+      "dateWheel.spin": "转动了约会转盘",
+      "fortune.draw": "抽了一支甜蜜签",
+      "pulse.tap": "点亮了一次心动接力",
+      "pulse.reset": "开启了新一轮心动接力",
       "quiz.answer": "回答了一道默契题",
       "theme.set": "切换了主题"
     };
@@ -1481,6 +1884,10 @@
       "music-play": "播放音乐",
       "music-pause": "暂停音乐",
       "list-add": "更新清单",
+      "td-draw": "抽互动题",
+      "date-wheel-spin": "转约会转盘",
+      "fortune-draw": "抽甜蜜签",
+      "pulse-tap": "点亮心动接力",
       "quiz-answer": "回答默契题"
     };
     return map[action] || "正在操作";
@@ -1555,16 +1962,149 @@
     return next;
   }
 
+  // [新增] 动态身份称谓系统：所有角色展示统一从这里转换。
+  function roleLabel(roleId) {
+    if (!roleId) return app.user ? "宝宝" : "对方";
+    if (!app.user || !app.user.id) return ROLE_FALLBACK[roleId] || roleId;
+    return roleId === app.user.id ? "我" : "宝宝";
+  }
+
+  function otherRoleId(baseId) {
+    const current = baseId || app.user && app.user.id;
+    if (current === "A") return "B";
+    if (current === "B") return "A";
+    return "";
+  }
+
+  function displayActor(actorOrId, actorName) {
+    const actor = actorOrId && typeof actorOrId === "object" ? actorOrId : { id: actorOrId, name: actorName };
+    if (actor && ROLE_IDS.includes(actor.id)) return roleLabel(actor.id);
+    return actor && actor.name || actorName || "我们";
+  }
+
+  function possessiveRoleLabel(roleId) {
+    const label = roleLabel(roleId);
+    return label === "我" ? "我的" : `${label}的`;
+  }
+
+  function applyDynamicIdentityLabels() {
+    if (!app.user || !app.user.id) return;
+    const roots = [document.getElementById("app"), document.getElementById("mainNav"), document.getElementById("floatingBackup")].filter(Boolean);
+    roots.forEach((root) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          const parent = node.parentElement;
+          if (!parent) return NodeFilter.FILTER_REJECT;
+          if (parent.closest("[id^='rt'], .rt-account-layer, script, style, textarea, input, select")) return NodeFilter.FILTER_REJECT;
+          if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
+
+      let node = walker.nextNode();
+      while (node) {
+        if (!app.identityTextOriginals.has(node)) app.identityTextOriginals.set(node, node.nodeValue);
+        const original = app.identityTextOriginals.get(node);
+        const next = identityText(original);
+        if (node.nodeValue !== next) node.nodeValue = next;
+        node = walker.nextNode();
+      }
+    });
+
+    updateIdentityInputValue("profile.personA.name", "A");
+    updateIdentityInputValue("profile.personB.name", "B");
+  }
+
+  function identityText(text) {
+    const leading = text.match(/^\s*/)?.[0] || "";
+    const trailing = text.match(/\s*$/)?.[0] || "";
+    const value = text.trim();
+    const exact = {
+      "我": roleLabel("A"),
+      "宝宝": roleLabel("B"),
+      "我的档案": `${possessiveRoleLabel("A")}档案`,
+      "宝宝档案": `${possessiveRoleLabel("B")}档案`,
+      "A 城小天气": `${roleLabel("A")} 城小天气`,
+      "B 城小天气": `${roleLabel("B")} 城小天气`,
+      "情侣A": roleLabel("A"),
+      "情侣B": roleLabel("B")
+    };
+    if (Object.prototype.hasOwnProperty.call(exact, value)) return `${leading}${exact[value]}${trailing}`;
+    return text
+      .replaceAll("情侣A", roleLabel("A"))
+      .replaceAll("情侣B", roleLabel("B"))
+      .replaceAll("A 城小天气", `${roleLabel("A")} 城小天气`)
+      .replaceAll("B 城小天气", `${roleLabel("B")} 城小天气`);
+  }
+
+  function updateIdentityInputValue(bindPath, roleId) {
+    const input = document.querySelector(`[data-bind="${bindPath}"]`);
+    if (!input) return;
+    const defaultValues = ["我", "宝宝", "情侣A", "情侣B", "角色A", "角色B"];
+    if (defaultValues.includes(input.value)) input.value = roleLabel(roleId);
+  }
+
+  function normalizeTruthDareCategory(category) {
+    return truthDareDecks[category] ? category : "daily";
+  }
+
+  function getTruthDarePool(category, mode) {
+    const key = normalizeTruthDareCategory(category);
+    const deck = truthDareDecks[key];
+    const list = deck[mode === "dare" ? "dare" : "truth"] || [];
+    return list.map((text, index) => ({ id: `${key}-${mode}-${index}`, text }));
+  }
+
+  function pickWithoutRecent(pool, recentIds) {
+    if (!pool.length) return null;
+    const recent = new Set(Array.isArray(recentIds) ? recentIds : []);
+    const candidates = pool.filter((item) => !recent.has(item.id));
+    const source = candidates.length ? candidates : pool;
+    return source[Math.floor(Math.random() * source.length)];
+  }
+
+  function updateRecentIds(recentIds, id, limit) {
+    const next = Array.isArray(recentIds) ? recentIds.filter((item) => item !== id) : [];
+    next.unshift(id);
+    return next.slice(0, limit);
+  }
+
+  function defaultPulseState() {
+    return {
+      round: 1,
+      goal: 30,
+      total: 0,
+      scores: { A: 0, B: 0 },
+      lastActor: "",
+      lastActorName: "",
+      updatedAt: ""
+    };
+  }
+
+  function triggerGameFlash(text) {
+    app.gameFlash = text || "";
+    clearTimeout(app.gameFlashTimer);
+    deferRender();
+    app.gameFlashTimer = setTimeout(() => {
+      app.gameFlash = "";
+      renderAddon();
+    }, 1200);
+  }
+
   function defaultRealtimeState() {
     return {
       schema: 2,
       theme: "macaron",
       moods: {},
       tasks: [],
-      tree: { level: 1, water: 0, totalWater: 0, lastWateredBy: "", history: [] },
-      doodle: { strokes: [], savedAt: "" },
-      music: { playlist: [], currentId: "", title: "", url: "", isPlaying: false, currentTime: 0, volume: 0.65, updatedAt: "" },
+      tree: { level: 1, water: 0, totalWater: 0, lastWateredBy: "", lastWateredById: "", history: [] },
+      doodle: { strokes: [], savedAt: "", savedBy: "", savedById: "" },
+      music: { playlist: [], currentId: "", title: "", url: "", isPlaying: false, currentTime: 0, volume: 0.65, updatedAt: "", updatedBy: "", updatedById: "" },
       quiz: { active: { id: uuid(), createdAt: new Date().toISOString(), createdBy: "系统", answers: {} }, reports: [] },
+      truthDare: { category: "daily", mode: "truth", current: null, recentIds: [], updatedAt: "" },
+      dateWheel: { current: null, recentIds: [], rotation: 0, updatedAt: "" },
+      fortune: { current: null, recentIds: [], updatedAt: "" },
+      pulse: defaultPulseState(),
       lists: { travel: [], dates: [], shopping: [] },
       calmMemos: [],
       missYouEvents: [],

@@ -362,6 +362,180 @@ html.rt-theme-night .rt-stat {
   line-height: 1.1;
 }
 
+/* [新增] 双人同步小游戏样式：转盘、抽签、心动接力、题库反馈。 */
+.rt-game-result {
+  display: grid;
+  gap: 8px;
+  min-height: 124px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(255, 244, 247, 0.92), rgba(235, 248, 255, 0.92));
+  box-shadow: var(--soft-shadow);
+}
+
+html.rt-theme-night .rt-game-result {
+  background: linear-gradient(135deg, rgba(255, 143, 171, 0.15), rgba(127, 183, 234, 0.13));
+}
+
+.rt-game-result.compact {
+  min-height: 88px;
+}
+
+.rt-game-result strong {
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+.rt-wheel-shell {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.rt-date-wheel {
+  position: relative;
+  display: grid;
+  width: 150px;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 8px solid rgba(255, 255, 255, 0.74);
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    var(--peach) 0 45deg,
+    var(--blue) 45deg 90deg,
+    var(--mint) 90deg 135deg,
+    var(--lemon) 135deg 180deg,
+    var(--peach) 180deg 225deg,
+    var(--blue) 225deg 270deg,
+    var(--mint) 270deg 315deg,
+    var(--lemon) 315deg 360deg
+  );
+  box-shadow: var(--shadow);
+  transform: rotate(var(--rt-wheel-rotation, 0deg));
+  transition: transform 900ms cubic-bezier(.2, .85, .2, 1);
+}
+
+.rt-date-wheel::before {
+  content: "";
+  position: absolute;
+  top: -18px;
+  width: 0;
+  height: 0;
+  border-right: 10px solid transparent;
+  border-left: 10px solid transparent;
+  border-bottom: 22px solid var(--peach-strong);
+  transform: rotate(calc(-1 * var(--rt-wheel-rotation, 0deg)));
+}
+
+.rt-date-wheel span {
+  display: grid;
+  width: 74px;
+  height: 74px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 253, 251, 0.9);
+  box-shadow: var(--soft-shadow);
+  font-weight: 900;
+  transform: rotate(calc(-1 * var(--rt-wheel-rotation, 0deg)));
+}
+
+.rt-option-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rt-option-cloud span {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.56);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.rt-pulse-stage {
+  position: relative;
+  display: grid;
+  min-height: 154px;
+  place-items: center;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: radial-gradient(circle at 50% 35%, rgba(255, 216, 222, 0.88), rgba(217, 239, 255, 0.62));
+  overflow: hidden;
+}
+
+html.rt-theme-night .rt-pulse-stage {
+  background: radial-gradient(circle at 50% 35%, rgba(255, 143, 171, 0.24), rgba(127, 183, 234, 0.16));
+}
+
+.rt-pulse-stage.is-flashing .rt-pulse-heart {
+  animation: rtPulsePop 640ms ease both;
+}
+
+.rt-pulse-heart {
+  font-size: 54px;
+  line-height: 1;
+  color: var(--peach-strong);
+  filter: drop-shadow(0 12px 18px rgba(255, 143, 171, 0.28));
+}
+
+.rt-pulse-stage em {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(255, 253, 251, 0.9);
+  color: var(--peach-strong);
+  font-style: normal;
+  font-weight: 900;
+}
+
+.rt-pulse-scores {
+  display: grid;
+  gap: 8px;
+}
+
+.rt-pulse-scores > div {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 8px;
+}
+
+.rt-score-bar {
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(217, 239, 255, 0.72);
+}
+
+.rt-score-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--peach-strong), var(--blue-strong));
+}
+
+@keyframes rtPulsePop {
+  0% {
+    transform: scale(0.82);
+  }
+  45% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 .rt-heart-blast {
   position: fixed;
   inset: 0;
@@ -425,8 +599,13 @@ html.rt-theme-night .rt-stat {
   .rt-form-row,
   .rt-form-row.two,
   .rt-doodle-tools,
+  .rt-wheel-shell,
   .rt-stat-grid {
     grid-template-columns: 1fr;
+  }
+
+  .rt-date-wheel {
+    justify-self: center;
   }
 }
 
