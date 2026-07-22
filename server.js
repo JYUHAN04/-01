@@ -91,14 +91,14 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         token: signToken(user),
         user,
-        snapshot: publicSnapshot()
+        snapshot: publicSnapshot(user)
       });
     }
 
     if (req.method === "GET" && requestUrl.pathname === "/api/state") {
       const user = authenticateHttp(req);
       if (!user) return sendJson(res, 401, { ok: false, error: "未登录或登录已过期" });
-      return sendJson(res, 200, { ok: true, snapshot: publicSnapshot() });
+      return sendJson(res, 200, { ok: true, snapshot: publicSnapshot(user) });
     }
 
     if (req.method === "POST" && requestUrl.pathname === "/api/op") {
@@ -106,8 +106,8 @@ const server = http.createServer(async (req, res) => {
       if (!user) return sendJson(res, 401, { ok: false, error: "未登录或登录已过期" });
       const op = await readJsonBody(req);
       const applied = applyOperation(normalizeOperation(op, user));
-      broadcast({ type: "op", op: applied });
-      return sendJson(res, 200, { ok: true, op: applied, snapshot: publicSnapshot() });
+      broadcastOperation(applied);
+      return sendJson(res, 200, { ok: true, op: sanitizeOperationForUser(applied, user), snapshot: publicSnapshot(user) });
     }
 
     return serveStatic(requestUrl.pathname, res, req.headers.origin);
@@ -156,7 +156,7 @@ wss.on("connection", (ws, req, user) => {
     type: "welcome",
     clientId,
     user,
-    snapshot: publicSnapshot(),
+    snapshot: publicSnapshot(user),
     presence: presenceList()
   }));
 
@@ -183,7 +183,7 @@ wss.on("connection", (ws, req, user) => {
 
       if (message.type === "op") {
         const applied = applyOperation(normalizeOperation(message.op || {}, user));
-        broadcast({ type: "op", op: applied });
+        broadcastOperation(applied);
       }
     } catch (error) {
       ws.send(JSON.stringify({ type: "error", error: "消息格式不正确" }));
@@ -371,6 +371,8 @@ function defaultRealtimeState() {
   return {
     schema: 2,
     theme: "macaron",
+    // [新增] A/B 独立主题偏好，同时保留旧 theme 字段兼容旧客户端。
+    themePrefs: { A: "macaron", B: "macaron" },
     moods: {},
     tasks: [],
     tree: {
@@ -431,6 +433,48 @@ function defaultRealtimeState() {
       lastActorName: "",
       updatedAt: ""
     },
+    // [新增] 第二批实时互动模块的持久化状态。
+    delayedLetters: [],
+    whispers: [],
+    capsules: [],
+    study: {
+      running: false,
+      startedAt: "",
+      elapsedSeconds: 0,
+      goalMinutes: 25,
+      quietMode: false,
+      noise: "off",
+      updatedAt: ""
+    },
+    emotionCalendar: {},
+    preferenceBook: {
+      likes: "",
+      avoid: "",
+      triggers: "",
+      comfort: "",
+      updatedAt: ""
+    },
+    reconciliations: [],
+    auction: defaultAuctionState(),
+    fate: {
+      current: {
+        id: "fate-1",
+        text: "如果只剩一个周末，你们更想怎么过？",
+        options: ["窝在家里", "去陌生城市"],
+        answers: {},
+        createdAt: "",
+        createdBy: "系统"
+      }
+    },
+    gravity: {
+      points: 0,
+      level: 1,
+      history: [],
+      certificates: []
+    },
+    meetingMap: { points: [] },
+    memoryDraw: { current: null, updatedAt: "" },
+    growthGoals: { short: [], mid: [], long: [] },
     lists: {
       travel: [],
       dates: [],
@@ -487,6 +531,8 @@ function applyOperation(op) {
 
     case "theme.set":
       realtime.theme = op.payload.theme === "night" ? "night" : "macaron";
+      realtime.themePrefs ||= {};
+      realtime.themePrefs[op.actor.id] = realtime.theme;
       break;
 
     case "mood.check": {
@@ -626,8 +672,260 @@ function applyOperation(op) {
       realtime.calmMemos = realtime.calmMemos.filter((item) => item.id !== op.payload.id);
       break;
 
+    // [新增] 延时信笺、悄悄话、胶囊、自习房、偏爱记录、情绪光谱、和解、地图与目标。
+    case "delayedLetter.create":
+      realtime.delayedLetters.unshift(withActor({
+        id: op.payload.id || crypto.randomUUID(),
+        title: String(op.payload.title || "").slice(0, 120),
+        text: String(op.payload.text || "").slice(0, 4000),
+        deliverAt: safeIso(op.payload.deliverAt, at),
+        status: "pending",
+        createdAt: at
+      }, op, at));
+      realtime.delayedLetters = realtime.delayedLetters.slice(0, 80);
+      break;
+
+    case "delayedLetter.update":
+      updateById(realtime.delayedLetters, op.payload.id, (item) => {
+        if (item.actor !== op.actor.id || Date.now() >= Date.parse(item.deliverAt || "")) return;
+        Object.assign(item, {
+          title: String(op.payload.title || "").slice(0, 120),
+          text: String(op.payload.text || "").slice(0, 4000),
+          updatedBy: op.actor.name,
+          updatedAt: at
+        });
+      });
+      break;
+
+    case "delayedLetter.withdraw":
+      updateById(realtime.delayedLetters, op.payload.id, (item) => {
+        if (item.actor !== op.actor.id || Date.now() >= Date.parse(item.deliverAt || "")) return;
+        Object.assign(item, { status: "withdrawn", text: "", withdrawnAt: at, updatedBy: op.actor.name, updatedAt: at });
+      });
+      break;
+
+    case "whisper.send":
+      realtime.whispers.unshift(withActor({
+        id: op.payload.id || crypto.randomUUID(),
+        to: normalizeRoleId(op.payload.to, op.actor.id === "A" ? "B" : "A"),
+        text: String(op.payload.text || "").slice(0, 1000),
+        readAt: "",
+        createdAt: at
+      }, op, at));
+      realtime.whispers = realtime.whispers.filter((item) => !item.readAt || Date.now() - Date.parse(item.readAt) < 86400000).slice(0, 40);
+      break;
+
+    case "whisper.read":
+      updateById(realtime.whispers, op.payload.id, (item) => {
+        if (item.to !== op.actor.id) return;
+        Object.assign(item, { readAt: at, text: "", updatedBy: op.actor.name, updatedAt: at });
+      });
+      break;
+
+    case "capsule.create":
+      realtime.capsules.unshift(withActor({
+        id: op.payload.id || crypto.randomUUID(),
+        title: String(op.payload.title || "").slice(0, 120),
+        unlockAt: safeIso(op.payload.unlockAt, at),
+        entries: {},
+        createdAt: at
+      }, op, at));
+      realtime.capsules = realtime.capsules.slice(0, 40);
+      break;
+
+    case "capsule.entry":
+      updateById(realtime.capsules, op.payload.id, (item) => {
+        item.entries ||= {};
+        item.entries[op.actor.id] = {
+          text: String(op.payload.text || "").slice(0, 5000),
+          image: String(op.payload.image || "").slice(0, 6 * 1024 * 1024),
+          actor: op.actor.id,
+          actorName: op.actor.name,
+          updatedAt: at
+        };
+        Object.assign(item, actorPatch(op, at));
+      });
+      break;
+
+    case "study.timer":
+      realtime.study = {
+        ...realtime.study,
+        running: Boolean(op.payload.running),
+        startedAt: String(op.payload.startedAt || ""),
+        elapsedSeconds: Math.max(0, Math.min(24 * 3600, Number(op.payload.elapsedSeconds || 0))),
+        goalMinutes: Math.max(5, Math.min(240, Number(op.payload.goalMinutes || 25))),
+        updatedAt: at,
+        updatedBy: op.actor.name,
+        updatedById: op.actor.id
+      };
+      break;
+
+    case "study.quiet":
+      realtime.study.quietMode = Boolean(op.payload.quietMode);
+      realtime.study.updatedAt = at;
+      realtime.study.updatedBy = op.actor.name;
+      realtime.study.updatedById = op.actor.id;
+      break;
+
+    case "study.noise":
+      realtime.study.noise = normalizeNoise(op.payload.noise);
+      realtime.study.updatedAt = at;
+      realtime.study.updatedBy = op.actor.name;
+      realtime.study.updatedById = op.actor.id;
+      break;
+
+    case "emotionSpectrum.check": {
+      const date = String(op.payload.date || at.slice(0, 10)).slice(0, 10);
+      realtime.emotionCalendar[date] ||= {};
+      realtime.emotionCalendar[date][op.actor.id] = {
+        emotion: normalizeEmotion(op.payload.emotion),
+        note: String(op.payload.note || "").slice(0, 500),
+        actor: op.actor.id,
+        actorName: op.actor.name,
+        updatedAt: at
+      };
+      break;
+    }
+
+    case "preference.update":
+      realtime.preferenceBook = {
+        ...realtime.preferenceBook,
+        likes: String(op.payload.patch?.likes || "").slice(0, 3000),
+        avoid: String(op.payload.patch?.avoid || "").slice(0, 3000),
+        triggers: String(op.payload.patch?.triggers || "").slice(0, 3000),
+        comfort: String(op.payload.patch?.comfort || "").slice(0, 3000),
+        updatedAt: at,
+        updatedBy: op.actor.name,
+        updatedById: op.actor.id
+      };
+      break;
+
+    case "reconciliation.add":
+      realtime.reconciliations.unshift(withActor({
+        id: op.payload.id || crypto.randomUUID(),
+        issue: String(op.payload.issue || "").slice(0, 400),
+        agreement: String(op.payload.agreement || "").slice(0, 2000),
+        status: "open",
+        ack: {},
+        createdAt: at
+      }, op, at));
+      break;
+
+    case "reconciliation.ack":
+      updateById(realtime.reconciliations, op.payload.id, (item) => {
+        item.ack ||= {};
+        item.ack[op.actor.id] = at;
+        if (["A", "B"].every((id) => item.ack[id])) item.status = "ready";
+        Object.assign(item, actorPatch(op, at));
+      });
+      break;
+
+    case "reconciliation.resolve":
+      updateById(realtime.reconciliations, op.payload.id, (item) => {
+        if (item.status === "ready" || ["A", "B"].every((id) => item.ack && item.ack[id])) {
+          Object.assign(item, { status: "resolved", resolvedAt: at }, actorPatch(op, at));
+        }
+      });
+      break;
+
+    case "auction.reset":
+      realtime.auction = defaultAuctionState(Number(op.payload.round || realtime.auction?.round + 1 || 1), at, op);
+      break;
+
+    case "auction.bid": {
+      ensureNotGameLocked(realtime, op.type);
+      const item = (realtime.auction.items || []).find((entry) => entry.id === op.payload.id);
+      const amount = Math.max(1, Math.min(50, Number(op.payload.amount || 10)));
+      realtime.auction.coins ||= { A: 100, B: 100 };
+      if (!item || Number(realtime.auction.coins[op.actor.id] || 0) < amount) break;
+      item.bids ||= {};
+      item.bids[op.actor.id] = Number(item.bids[op.actor.id] || 0) + amount;
+      realtime.auction.coins[op.actor.id] -= amount;
+      item.updatedAt = at;
+      break;
+    }
+
+    case "fate.reset":
+      ensureNotGameLocked(realtime, op.type);
+      realtime.fate.current = sanitizeFateQuestion(op.payload.question, at, op.actor.name);
+      break;
+
+    case "fate.answer":
+      ensureNotGameLocked(realtime, op.type);
+      realtime.fate.current ||= sanitizeFateQuestion(null, at, op.actor.name);
+      realtime.fate.current.answers ||= {};
+      realtime.fate.current.answers[op.actor.id] = String(op.payload.answer || "").slice(0, 80);
+      realtime.fate.current.updatedAt = at;
+      break;
+
+    case "gravity.certificate":
+      realtime.gravity.certificates.unshift(withActor({
+        id: op.payload.id || crypto.randomUUID(),
+        level: gravityLevel(realtime.gravity.points),
+        text: String(op.payload.text || "电子纪念证书已生成。").slice(0, 200),
+        createdAt: at
+      }, op, at));
+      realtime.gravity.certificates = realtime.gravity.certificates.slice(0, 12);
+      break;
+
+    case "meeting.add":
+      realtime.meetingMap.points.push(withActor({
+        id: op.payload.id || crypto.randomUUID(),
+        city: String(op.payload.city || "").slice(0, 40),
+        place: String(op.payload.place || "").slice(0, 80),
+        date: String(op.payload.date || at.slice(0, 10)).slice(0, 10),
+        note: String(op.payload.note || "").slice(0, 200)
+      }, op, at));
+      realtime.meetingMap.points = realtime.meetingMap.points.slice(-80);
+      break;
+
+    case "meeting.delete":
+      realtime.meetingMap.points = realtime.meetingMap.points.filter((item) => item.id !== op.payload.id);
+      break;
+
+    case "memory.draw":
+      realtime.memoryDraw = {
+        current: withActor({
+          kind: String(op.payload.memory?.kind || "回忆").slice(0, 20),
+          title: String(op.payload.memory?.title || "").slice(0, 160),
+          text: String(op.payload.memory?.text || "").slice(0, 1000),
+          image: String(op.payload.memory?.image || "").slice(0, 6 * 1024 * 1024)
+        }, op, at),
+        updatedAt: at
+      };
+      break;
+
+    case "growthGoal.add": {
+      const term = normalizeGoalTerm(op.payload.term);
+      realtime.growthGoals[term].unshift(withActor({
+        id: op.payload.id || crypto.randomUUID(),
+        title: String(op.payload.title || "").slice(0, 180),
+        note: String(op.payload.note || "").slice(0, 500),
+        checks: {},
+        createdAt: at
+      }, op, at));
+      break;
+    }
+
+    case "growthGoal.check": {
+      const term = normalizeGoalTerm(op.payload.term);
+      updateById(realtime.growthGoals[term], op.payload.id, (item) => {
+        item.checks ||= {};
+        item.checks[op.actor.id] = at;
+        Object.assign(item, actorPatch(op, at));
+      });
+      break;
+    }
+
+    case "growthGoal.delete": {
+      const term = normalizeGoalTerm(op.payload.term);
+      realtime.growthGoals[term] = realtime.growthGoals[term].filter((item) => item.id !== op.payload.id);
+      break;
+    }
+
     // [新增] 双人同步小游戏操作。
     case "truthDare.draw": {
+      ensureNotGameLocked(realtime, op.type);
       const mode = op.payload.mode === "dare" ? "dare" : "truth";
       const category = normalizeTruthDareCategory(op.payload.category);
       realtime.truthDare = {
@@ -647,6 +945,7 @@ function applyOperation(op) {
     }
 
     case "dateWheel.spin":
+      ensureNotGameLocked(realtime, op.type);
       realtime.dateWheel = {
         ...realtime.dateWheel,
         current: withActor({
@@ -661,6 +960,7 @@ function applyOperation(op) {
       break;
 
     case "fortune.draw":
+      ensureNotGameLocked(realtime, op.type);
       realtime.fortune = {
         ...realtime.fortune,
         current: withActor({
@@ -673,6 +973,7 @@ function applyOperation(op) {
       break;
 
     case "pulse.tap": {
+      ensureNotGameLocked(realtime, op.type);
       const amount = Math.max(1, Math.min(5, Number(op.payload.amount || 1)));
       realtime.pulse ||= defaultRealtimeState().pulse;
       realtime.pulse.scores ||= { A: 0, B: 0 };
@@ -690,6 +991,7 @@ function applyOperation(op) {
     }
 
     case "pulse.reset":
+      ensureNotGameLocked(realtime, op.type);
       realtime.pulse = {
         ...defaultRealtimeState().pulse,
         round: Number(realtime.pulse?.round || 1) + 1,
@@ -700,6 +1002,7 @@ function applyOperation(op) {
       break;
 
     case "quiz.reset":
+      ensureNotGameLocked(realtime, op.type);
       realtime.quiz.active = {
         id: op.payload.id || crypto.randomUUID(),
         createdAt: at,
@@ -709,6 +1012,7 @@ function applyOperation(op) {
       break;
 
     case "quiz.answer": {
+      ensureNotGameLocked(realtime, op.type);
       realtime.quiz.active ||= {
         id: crypto.randomUUID(),
         createdAt: at,
@@ -728,6 +1032,7 @@ function applyOperation(op) {
       throw new Error(`Unsupported operation: ${op.type}`);
   }
 
+  grantGravityForOperation(realtime, op, at);
   state.realtime = realtime;
   state.revision += 1;
   state.updatedAt = at;
@@ -753,6 +1058,100 @@ function normalizeTruthDareCategory(category) {
   return ["daily", "sweet", "fun"].includes(category) ? category : "daily";
 }
 
+function defaultAuctionState(round = 1, at = new Date().toISOString(), op = { actor: { name: "系统" } }) {
+  const catalog = ["一次认真视频约会", "下次见面路线选择权", "睡前故事十分钟", "周末共同电影", "一次无条件夸夸", "一起完成一顿饭"];
+  return {
+    round: Number(round || 1),
+    coins: { A: 100, B: 100 },
+    items: catalog.map((title, index) => ({ id: `auction-${round}-${index}`, title, bids: {} })),
+    createdAt: at,
+    createdBy: op.actor?.name || "系统"
+  };
+}
+
+function safeIso(input, fallback) {
+  const time = Date.parse(input || "");
+  return Number.isNaN(time) ? fallback : new Date(time).toISOString();
+}
+
+function normalizeRoleId(value, fallback) {
+  return ["A", "B"].includes(value) ? value : fallback;
+}
+
+function normalizeNoise(noise) {
+  return ["off", "rain", "waves", "cafe", "white"].includes(noise) ? noise : "off";
+}
+
+function normalizeEmotion(emotion) {
+  return ["晴", "甜", "稳", "累", "低", "想"].includes(emotion) ? emotion : "晴";
+}
+
+function normalizeGoalTerm(term) {
+  return ["short", "mid", "long"].includes(term) ? term : "short";
+}
+
+function sanitizeFateQuestion(question, at, actorName) {
+  const fallback = {
+    id: "fate-1",
+    text: "如果只剩一个周末，你们更想怎么过？",
+    options: ["窝在家里", "去陌生城市"]
+  };
+  const source = question && typeof question === "object" ? question : fallback;
+  const options = Array.isArray(source.options) && source.options.length >= 2 ? source.options.slice(0, 2) : fallback.options;
+  return {
+    id: String(source.id || crypto.randomUUID()).slice(0, 80),
+    text: String(source.text || fallback.text).slice(0, 200),
+    options: options.map((item) => String(item).slice(0, 80)),
+    answers: {},
+    createdAt: at,
+    createdBy: actorName || "系统"
+  };
+}
+
+function ensureNotGameLocked(realtime, type) {
+  const locked = (realtime.reconciliations || []).some((item) => item.status !== "resolved");
+  if (locked) throw new Error(`Games locked by reconciliation: ${type}`);
+}
+
+function grantGravityForOperation(realtime, op, at) {
+  const rewards = {
+    "mood.check": 2,
+    "emotionSpectrum.check": 2,
+    "task.update": 1,
+    "tree.water": 1,
+    "doodle.saved": 2,
+    "truthDare.draw": 1,
+    "dateWheel.spin": 1,
+    "fortune.draw": 1,
+    "pulse.tap": 1,
+    "quiz.answer": 1,
+    "auction.bid": 1,
+    "fate.answer": 1,
+    "growthGoal.check": 3,
+    "memory.draw": 1,
+    "meeting.add": 2,
+    "capsule.entry": 2,
+    "delayedLetter.create": 2,
+    "whisper.send": 1
+  };
+  const amount = rewards[op.type] || 0;
+  if (!amount) return;
+  realtime.gravity ||= { points: 0, level: 1, history: [], certificates: [] };
+  realtime.gravity.points = Number(realtime.gravity.points || 0) + amount;
+  realtime.gravity.level = gravityLevel(realtime.gravity.points);
+  realtime.gravity.history = (realtime.gravity.history || []).concat({
+    type: op.type,
+    amount,
+    actor: op.actor.id,
+    actorName: op.actor.name,
+    createdAt: at
+  }).slice(-120);
+}
+
+function gravityLevel(points) {
+  return Math.max(1, Math.floor(Math.sqrt(Number(points || 0) / 12)) + 1);
+}
+
 function updateById(list, id, update) {
   const item = Array.isArray(list) ? list.find((entry) => entry.id === id) : null;
   if (item) update(item);
@@ -775,16 +1174,85 @@ function actorPatch(op, at) {
   };
 }
 
-function publicSnapshot() {
+function publicSnapshot(user) {
   return {
     schema: state.schema,
     revision: state.revision,
     updatedAt: state.updatedAt,
     lastActor: state.lastActor,
     legacy: state.legacy,
-    realtime: state.realtime,
-    history: state.history
+    realtime: sanitizeRealtimeForUser(state.realtime, user),
+    history: sanitizeHistoryForUser(state.history, user)
   };
+}
+
+function sanitizeRealtimeForUser(realtime, user) {
+  const now = Date.now();
+  const copy = JSON.parse(JSON.stringify(realtime || {}));
+  const userId = user && user.id;
+
+  copy.delayedLetters = (copy.delayedLetters || []).map((item) => {
+    const mine = item.actor === userId;
+    const unlocked = Date.parse(item.deliverAt || "") <= now;
+    if (mine || unlocked || item.status === "withdrawn") return item;
+    return { ...item, title: "信笺正在倒计时", text: "", hidden: true };
+  });
+
+  copy.capsules = (copy.capsules || []).map((item) => {
+    const unlocked = Date.parse(item.unlockAt || "") <= now;
+    if (unlocked) return item;
+    const entries = {};
+    for (const role of ["A", "B"]) {
+      if (item.entries && item.entries[role]) {
+        entries[role] = {
+          sealed: true,
+          actor: role,
+          actorName: item.entries[role].actorName,
+          updatedAt: item.entries[role].updatedAt
+        };
+      }
+    }
+    return { ...item, entries };
+  });
+
+  copy.whispers = (copy.whispers || []).map((item) => {
+    if (item.to === userId && !item.readAt) return item;
+    return { ...item, text: "" };
+  });
+
+  return copy;
+}
+
+function sanitizeOperationForUser(op, user) {
+  const userId = user && user.id;
+  const payload = { ...(op.payload || {}) };
+  if (op.type === "delayedLetter.create" || op.type === "delayedLetter.update") {
+    const mine = op.actor && op.actor.id === userId;
+    const unlocked = Date.parse(payload.deliverAt || "") <= Date.now();
+    if (!mine && !unlocked) {
+      payload.title = "信笺正在倒计时";
+      payload.text = "";
+      payload.hidden = true;
+    }
+  }
+
+  if (op.type === "capsule.entry") {
+    payload.text = "";
+    payload.image = "";
+    payload.sealed = true;
+  }
+
+  if (op.type === "whisper.send" && payload.to !== userId) {
+    payload.text = "";
+  }
+
+  return { ...op, payload };
+}
+
+function sanitizeHistoryForUser(history, user) {
+  return Array.isArray(history)
+    ? history.map((entry) => sanitizeOperationForUser(entry, user)).slice(-200)
+    : [];
 }
 
 function presenceList() {
@@ -812,6 +1280,14 @@ function broadcast(message) {
   for (const client of clients.values()) {
     if (client.ws.readyState === WebSocket.OPEN) {
       client.ws.send(raw);
+    }
+  }
+}
+
+function broadcastOperation(op) {
+  for (const client of clients.values()) {
+    if (client.ws.readyState === WebSocket.OPEN) {
+      client.ws.send(JSON.stringify({ type: "op", op: sanitizeOperationForUser(op, client.user) }));
     }
   }
 }

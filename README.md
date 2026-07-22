@@ -53,3 +53,16 @@ COUPLE_B_NAME
   - Added WebSocket operation handlers for the new synced game actions.
 - `realtime-addon.css`
   - Added responsive mobile styles and animation feedback for the new game widgets.
+
+## Added / Modified Areas In v2.3.0
+- `realtime-addon.js`
+  - [新增] 延时信笺、限时悄悄话、共享时间胶囊、云陪伴自习房间、偏爱记录本、情绪光谱日历、和解契约、引力值、相遇轨迹地图、回忆抽签机、共同成长目标。
+  - [新增] 默契拍卖场、命运选择题，并接入和解契约锁定逻辑。
+  - [新增] 相册分类增强视图，保留原相册与 JSON 导入导出。
+  - [修改] 双主题改为 A/B 账号独立云端保存。
+- `server.js`
+  - [新增] 第二批模块的持久化字段与 WebSocket 操作处理。
+  - [新增] 延时信笺、时间胶囊、限时悄悄话的服务端可见性过滤。
+  - [新增] 引力值奖励与和解契约游戏锁定校验。
+- `realtime-addon.css`
+  - [新增] 新模块移动端布局、暗夜主题适配、引力值特效、轨迹地图动画。

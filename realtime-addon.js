@@ -22,6 +22,13 @@
     listTab: "travel",
     truthDareCategory: "daily",
     truthDareMode: "truth",
+    // [新增] 本轮新增模块的本地 UI 状态；真实数据仍全部进入 realtime 云端状态。
+    albumCategoryFilter: "all",
+    growthGoalTab: "short",
+    selectedEmotion: "晴",
+    quietDraftBlockedAt: 0,
+    noiseSource: null,
+    noiseContext: null,
     selectedMood: "开心",
     lastLegacyHash: "",
     realtime: defaultRealtimeState(),
@@ -161,6 +168,46 @@
     shopping: "购物清单"
   };
 
+  // [新增] 延时信笺、情绪光谱、自习房、地图、目标和新游戏的配置项。
+  const emotionOptions = [
+    { key: "晴", label: "晴", color: "#ffbf69" },
+    { key: "甜", label: "甜", color: "#ff8fab" },
+    { key: "稳", label: "稳", color: "#7bdcb5" },
+    { key: "累", label: "累", color: "#9bb1ff" },
+    { key: "低", label: "低", color: "#8f8aa8" },
+    { key: "想", label: "想", color: "#8dc8f4" }
+  ];
+
+  const albumCategories = ["日常", "旅行", "节日", "涂鸦", "礼物", "其他"];
+  const goalLabels = { short: "短期", mid: "中期", long: "长期" };
+  const preferenceFields = [
+    ["likes", "喜欢"],
+    ["avoid", "忌口/避雷"],
+    ["triggers", "情绪雷区"],
+    ["comfort", "安抚方式"]
+  ];
+  const whiteNoiseOptions = [
+    ["off", "关闭"],
+    ["rain", "细雨"],
+    ["waves", "海浪"],
+    ["cafe", "咖啡馆"],
+    ["white", "白噪音"]
+  ];
+
+  const auctionCatalog = [
+    "一次认真视频约会", "下次见面路线选择权", "睡前故事十分钟", "周末共同电影",
+    "一次无条件夸夸", "一起完成一顿饭", "散步时牵手优先权", "今日撒娇豁免券"
+  ];
+
+  const fateQuestions = [
+    { id: "fate-1", text: "如果只剩一个周末，你们更想怎么过？", options: ["窝在家里", "去陌生城市"] },
+    { id: "fate-2", text: "纪念日惊喜更偏向哪一种？", options: ["精心准备", "随性见面"] },
+    { id: "fate-3", text: "异地想念爆发时更希望？", options: ["马上通话", "收到长消息"] },
+    { id: "fate-4", text: "下一次旅行更想选？", options: ["海边慢住", "山城散步"] },
+    { id: "fate-5", text: "遇到小矛盾时更适合？", options: ["先抱抱冷静", "先把话说清"] },
+    { id: "fate-6", text: "共同生活里更想优先拥有？", options: ["稳定仪式感", "新鲜小冒险"] }
+  ];
+
   boot();
 
   function boot() {
@@ -205,6 +252,12 @@
         app.socket.send(JSON.stringify({ type: "ping" }));
       }
     }, 25000);
+
+    // [新增] 定时刷新倒计时类模块，并从云端拉取到期信笺/胶囊的可见内容。
+    setInterval(() => {
+      if (app.token) fetchSnapshot();
+      renderAddon();
+    }, 30000);
   }
 
   function wrapOriginalFunctions() {
@@ -320,6 +373,7 @@
       if (action === "pulse-reset") resetPulse();
       if (action === "quiz-answer") answerQuiz(target.dataset.question, target.dataset.answer);
       if (action === "quiz-reset") resetQuiz();
+      if (handleExtendedAction(action, target)) return;
       if (action === "push-now") scheduleLegacySync("手动同步原有功能");
       if (action === "close-account-layer") hideAccountLayer();
     });
@@ -339,6 +393,47 @@
         });
       }
     });
+  }
+
+  // [新增] 新模块事件分发，避免改动原有功能按钮逻辑。
+  function handleExtendedAction(action, target) {
+    const map = {
+      "letter-send": sendDelayedLetter,
+      "letter-update": () => updateDelayedLetter(target.dataset.id),
+      "letter-withdraw": () => withdrawDelayedLetter(target.dataset.id),
+      "whisper-send": sendSecretWhisper,
+      "whisper-open": () => openSecretWhisper(target.dataset.id),
+      "capsule-create": createCapsule,
+      "capsule-entry": () => saveCapsuleEntry(target.dataset.id),
+      "study-start": startStudyTimer,
+      "study-pause": pauseStudyTimer,
+      "study-reset": resetStudyTimer,
+      "study-quiet": toggleQuietMode,
+      "study-noise": () => setStudyNoise(target.dataset.noise || "off"),
+      "emotion-select": () => selectEmotion(target.dataset.emotion),
+      "emotion-save": saveEmotionSpectrum,
+      "preference-save": savePreferenceBook,
+      "reconcile-add": addReconciliation,
+      "reconcile-ack": () => acknowledgeReconciliation(target.dataset.id),
+      "reconcile-resolve": () => resolveReconciliation(target.dataset.id),
+      "auction-reset": resetAuction,
+      "auction-bid": () => bidAuctionItem(target.dataset.id),
+      "fate-reset": resetFateQuestion,
+      "fate-answer": () => answerFateQuestion(target.dataset.answer),
+      "gravity-certificate": createGravityCertificate,
+      "map-add": addMeetingPoint,
+      "map-delete": () => deleteMeetingPoint(target.dataset.id),
+      "memory-draw": drawMemory,
+      "goal-tab": () => { app.growthGoalTab = target.dataset.term || "short"; renderAddon(); },
+      "goal-add": addGrowthGoal,
+      "goal-check": () => checkGrowthGoal(target.dataset.term, target.dataset.id),
+      "goal-delete": () => deleteGrowthGoal(target.dataset.term, target.dataset.id),
+      "album-filter": () => { app.albumCategoryFilter = target.dataset.category || "all"; renderAddon(); },
+      "album-set-category": () => setAlbumCategory(Number(target.dataset.index), target.dataset.category || "其他")
+    };
+    if (!map[action]) return false;
+    map[action]();
+    return true;
   }
 
   async function login() {
@@ -555,7 +650,7 @@
   function applySnapshot(snapshot, forceServerLegacy) {
     app.snapshotRevision = snapshot.revision || app.snapshotRevision;
     app.realtime = normalizeRealtime(snapshot.realtime || app.realtime);
-    applyTheme(app.realtime.theme || "macaron");
+    applyTheme(currentTheme());
 
     if (snapshot.legacy) {
       const localTime = getLegacyTime(getLegacyState());
@@ -690,8 +785,11 @@
     const actorId = op.actor && op.actor.id || "";
 
     if (op.type === "theme.set") {
-      realtime.theme = payload.theme === "night" ? "night" : "macaron";
-      applyTheme(realtime.theme);
+      const theme = payload.theme === "night" ? "night" : "macaron";
+      realtime.theme = theme;
+      realtime.themePrefs ||= {};
+      realtime.themePrefs[actorId || app.user && app.user.id || "A"] = theme;
+      applyTheme(currentTheme());
     }
 
     if (op.type === "mood.check") {
@@ -820,6 +918,226 @@
       realtime.calmMemos = realtime.calmMemos.filter((item) => item.id !== payload.id);
     }
 
+    // [新增] 信笺、胶囊、自习房、偏爱记录、情绪光谱、和解契约、地图、目标等同步状态。
+    if (op.type === "delayedLetter.create") {
+      realtime.delayedLetters.unshift(withActor({
+        id: payload.id || uuid(),
+        title: payload.title || "",
+        text: payload.text || "",
+        deliverAt: payload.deliverAt || at,
+        status: "pending",
+        hidden: Boolean(payload.hidden),
+        createdAt: at
+      }, op, at));
+    }
+
+    if (op.type === "delayedLetter.update") {
+      updateItem(realtime.delayedLetters, payload.id, {
+        title: payload.title || "",
+        text: payload.text || "",
+        updatedAt: at
+      }, op, at);
+    }
+
+    if (op.type === "delayedLetter.withdraw") {
+      updateItem(realtime.delayedLetters, payload.id, { status: "withdrawn", text: "", withdrawnAt: at }, op, at);
+    }
+
+    if (op.type === "whisper.send") {
+      realtime.whispers.unshift(withActor({
+        id: payload.id || uuid(),
+        to: payload.to || otherRoleId(actorId),
+        text: payload.text || "",
+        readAt: "",
+        createdAt: at
+      }, op, at));
+      realtime.whispers = realtime.whispers.slice(0, 40);
+    }
+
+    if (op.type === "whisper.read") {
+      updateItem(realtime.whispers, payload.id, { readAt: at, text: "" }, op, at);
+    }
+
+    if (op.type === "capsule.create") {
+      realtime.capsules.unshift(withActor({
+        id: payload.id || uuid(),
+        title: payload.title || "",
+        unlockAt: payload.unlockAt || at,
+        entries: {},
+        createdAt: at
+      }, op, at));
+    }
+
+    if (op.type === "capsule.entry") {
+      const capsule = realtime.capsules.find((item) => item.id === payload.id);
+      if (capsule) {
+        capsule.entries ||= {};
+        capsule.entries[actorId] = {
+          text: payload.text || "",
+          image: payload.image || "",
+          sealed: Boolean(payload.sealed),
+          actor: actorId,
+          actorName,
+          updatedAt: at
+        };
+        Object.assign(capsule, actorPatch(op, at));
+      }
+    }
+
+    if (op.type === "study.timer") {
+      realtime.study = { ...realtime.study, ...payload, updatedAt: at, updatedById: actorId, updatedBy: actorName };
+    }
+
+    if (op.type === "study.quiet") {
+      realtime.study.quietMode = Boolean(payload.quietMode);
+      realtime.study.updatedAt = at;
+      realtime.study.updatedById = actorId;
+      realtime.study.updatedBy = actorName;
+    }
+
+    if (op.type === "study.noise") {
+      realtime.study.noise = normalizeNoise(payload.noise);
+      realtime.study.updatedAt = at;
+      realtime.study.updatedById = actorId;
+      realtime.study.updatedBy = actorName;
+      syncNoisePlayback(realtime.study.noise);
+    }
+
+    if (op.type === "emotionSpectrum.check") {
+      const date = payload.date || today();
+      realtime.emotionCalendar[date] ||= {};
+      realtime.emotionCalendar[date][actorId] = {
+        emotion: normalizeEmotion(payload.emotion),
+        note: payload.note || "",
+        actor: actorId,
+        actorName,
+        updatedAt: at
+      };
+    }
+
+    if (op.type === "preference.update") {
+      realtime.preferenceBook = {
+        ...realtime.preferenceBook,
+        ...payload.patch,
+        updatedAt: at,
+        updatedBy: actorName,
+        updatedById: actorId
+      };
+    }
+
+    if (op.type === "reconciliation.add") {
+      realtime.reconciliations.unshift(withActor({
+        id: payload.id || uuid(),
+        issue: payload.issue || "",
+        agreement: payload.agreement || "",
+        status: "open",
+        ack: {},
+        createdAt: at
+      }, op, at));
+    }
+
+    if (op.type === "reconciliation.ack") {
+      const item = realtime.reconciliations.find((entry) => entry.id === payload.id);
+      if (item) {
+        item.ack ||= {};
+        item.ack[actorId] = at;
+        if (ROLE_IDS.every((id) => item.ack[id])) item.status = "ready";
+        Object.assign(item, actorPatch(op, at));
+      }
+    }
+
+    if (op.type === "reconciliation.resolve") {
+      updateItem(realtime.reconciliations, payload.id, { status: "resolved", resolvedAt: at }, op, at);
+    }
+
+    if (op.type === "auction.reset") {
+      realtime.auction = createAuctionRound(payload.round || Number(realtime.auction?.round || 0) + 1, at, op);
+    }
+
+    if (op.type === "auction.bid") {
+      const item = realtime.auction.items.find((entry) => entry.id === payload.id);
+      const amount = Math.max(1, Number(payload.amount || 10));
+      if (item && Number(realtime.auction.coins?.[actorId] || 0) >= amount) {
+        item.bids ||= {};
+        item.bids[actorId] = Number(item.bids[actorId] || 0) + amount;
+        realtime.auction.coins[actorId] -= amount;
+        item.updatedAt = at;
+      }
+    }
+
+    if (op.type === "fate.reset") {
+      realtime.fate.current = {
+        ...(payload.question || randomFateQuestion()),
+        answers: {},
+        createdAt: at,
+        createdBy: actorName
+      };
+    }
+
+    if (op.type === "fate.answer") {
+      realtime.fate.current ||= { ...randomFateQuestion(), answers: {} };
+      realtime.fate.current.answers ||= {};
+      realtime.fate.current.answers[actorId] = payload.answer || "";
+      realtime.fate.current.updatedAt = at;
+    }
+
+    if (op.type === "gravity.certificate") {
+      realtime.gravity.certificates.unshift(withActor({
+        id: payload.id || uuid(),
+        level: gravityLevel(realtime.gravity.points),
+        text: payload.text || "电子纪念证书已生成。",
+        createdAt: at
+      }, op, at));
+      realtime.gravity.certificates = realtime.gravity.certificates.slice(0, 12);
+    }
+
+    if (op.type === "meeting.add") {
+      realtime.meetingMap.points.push(withActor({
+        id: payload.id || uuid(),
+        city: payload.city || "",
+        place: payload.place || "",
+        date: payload.date || today(),
+        note: payload.note || ""
+      }, op, at));
+    }
+
+    if (op.type === "meeting.delete") {
+      realtime.meetingMap.points = realtime.meetingMap.points.filter((item) => item.id !== payload.id);
+    }
+
+    if (op.type === "memory.draw") {
+      realtime.memoryDraw = {
+        current: withActor(payload.memory || {}, op, at),
+        updatedAt: at
+      };
+    }
+
+    if (op.type === "growthGoal.add") {
+      const term = normalizeGoalTerm(payload.term);
+      realtime.growthGoals[term].unshift(withActor({
+        id: payload.id || uuid(),
+        title: payload.title || "",
+        note: payload.note || "",
+        checks: {},
+        createdAt: at
+      }, op, at));
+    }
+
+    if (op.type === "growthGoal.check") {
+      const term = normalizeGoalTerm(payload.term);
+      const item = realtime.growthGoals[term].find((entry) => entry.id === payload.id);
+      if (item) {
+        item.checks ||= {};
+        item.checks[actorId] = at;
+        Object.assign(item, actorPatch(op, at));
+      }
+    }
+
+    if (op.type === "growthGoal.delete") {
+      const term = normalizeGoalTerm(payload.term);
+      realtime.growthGoals[term] = realtime.growthGoals[term].filter((item) => item.id !== payload.id);
+    }
+
     // [新增] 趣味互动操作：真心话大冒险、同步约会转盘、甜蜜抽签、心动接力。
     if (op.type === "truthDare.draw") {
       realtime.truthDare = {
@@ -907,6 +1225,8 @@
         actorName
       };
     }
+
+    grantGravityForOperation(realtime, op, at);
   }
 
   function renderAddon() {
@@ -918,7 +1238,8 @@
     renderSettingsAddon();
     updateConnectionStatus();
     setupDoodleCanvas();
-    applyTheme(app.realtime.theme || "macaron");
+    applyTheme(currentTheme());
+    applyGravityEffects(app.realtime.gravity);
     applyMusicToElement();
     applyDynamicIdentityLabels();
   }
@@ -1022,6 +1343,10 @@
           ${renderStats()}
         </div>
       </div>
+      ${renderDelayedLetters()}
+      ${renderStudyRoom()}
+      ${renderEmotionSpectrum()}
+      ${renderGravityPanel()}
     `;
   }
 
@@ -1043,6 +1368,9 @@
         <canvas id="rtDoodleCanvas" width="1200" height="750"></canvas>
         <p class="small-note">已同步 ${app.realtime.doodle.strokes.length} 笔${app.realtime.doodle.savedBy ? `，上次由 ${esc(displayActor(app.realtime.doodle.savedById, app.realtime.doodle.savedBy))} 保存` : ""}。</p>
       </div>
+      ${renderAlbumCategories()}
+      ${renderTimeCapsules()}
+      ${renderMemoryMachine()}
     `;
   }
 
@@ -1100,6 +1428,10 @@
         </div>
         <div class="rt-stack">${renderCalmMemos()}</div>
       </div>
+      ${renderPreferenceBook()}
+      ${renderReconciliationPanel()}
+      ${renderMeetingMap()}
+      ${renderGrowthGoals()}
     `;
   }
 
@@ -1107,11 +1439,13 @@
     const root = ensureMount("tab-games", "rtGames", "rt-section");
     if (!root) return;
     const active = app.realtime.quiz.active || { answers: {} };
+    const locked = hasOpenReconciliation();
     root.innerHTML = `
       <section class="section-head">
         <h2>双人互动游戏</h2>
         <p>真心话大冒险、约会转盘、甜蜜抽签、心动接力和默契测试都会实时同步。</p>
       </section>
+      ${locked ? `<div class="rt-lock-banner">和解契约未完成，大部分娱乐小游戏已温柔暂停。先去工具页完成和解登记吧。</div>` : ""}
       <div class="rt-grid two">
         <div class="panel rt-stack">
           <div class="rt-card-title">
@@ -1166,7 +1500,10 @@
         ${quizQuestions.map((question, index) => renderQuizQuestion(question, index, active)).join("")}
         ${renderQuizReport(active)}
       </div>
+      ${renderAuctionGame()}
+      ${renderFateGame()}
     `;
+    applyEntertainmentLock();
   }
 
   function renderSettingsAddon() {
@@ -1192,13 +1529,522 @@
         <div class="panel rt-stack">
           <div class="rt-card-title">
             <h3>双主题</h3>
-            <span>云端同步</span>
+            <span>账号独立保存</span>
           </div>
           <div class="rt-theme-toggle">
-            <button class="${app.realtime.theme !== "night" ? "active" : ""}" data-rt="theme" data-theme="macaron">原版马卡龙</button>
-            <button class="${app.realtime.theme === "night" ? "active" : ""}" data-rt="theme" data-theme="night">暗夜温柔</button>
+            <button class="${currentTheme() !== "night" ? "active" : ""}" data-rt="theme" data-theme="macaron">原版马卡龙</button>
+            <button class="${currentTheme() === "night" ? "active" : ""}" data-rt="theme" data-theme="night">暗夜温柔</button>
           </div>
         </div>
+      </div>
+    `;
+  }
+
+  // [新增] 延时信笺和限时悄悄话：都走 WebSocket，同步后按权限/时间展示。
+  function renderDelayedLetters() {
+    const letters = (app.realtime.delayedLetters || []).slice().sort((a, b) => Date.parse(a.deliverAt || 0) - Date.parse(b.deliverAt || 0));
+    return `
+      <div class="rt-grid two rt-section">
+        <div class="panel rt-stack">
+          <div class="rt-card-title">
+            <h3>延时信笺</h3>
+            <span>倒计时投递</span>
+          </div>
+          <div class="rt-form-row">
+            <label>标题<input id="rtLetterTitle" placeholder="写给${esc(roleLabel(otherRoleId()))}的一封信"></label>
+            <label>投递时间<input id="rtLetterAt" type="datetime-local" value="${esc(dateTimeLocal(Date.now() + 3600000))}"></label>
+            <label>内容<textarea id="rtLetterText" placeholder="倒计时结束前，你还可以修改或撤回。"></textarea></label>
+            <button class="primary" data-rt="letter-send">${safeIcon("plus")}放入信箱</button>
+          </div>
+          <div class="rt-stack">${letters.length ? letters.slice(0, 10).map(renderLetterCard).join("") : `<div class="empty">还没有延时信笺。</div>`}</div>
+        </div>
+        <div class="panel rt-stack">
+          <div class="rt-card-title">
+            <h3>限时悄悄话</h3>
+            <span>只读一次</span>
+          </div>
+          <label>悄悄话<textarea id="rtWhisperText" placeholder="读完即销毁，不会作为永久内容展示。"></textarea></label>
+          <button class="primary" data-rt="whisper-send">${safeIcon("play")}发送一次性悄悄话</button>
+          <div class="rt-stack">${renderWhispers()}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderLetterCard(item) {
+    const mine = item.actor === (app.user && app.user.id);
+    const due = Date.parse(item.deliverAt || "");
+    const unlocked = due && Date.now() >= due;
+    const withdrawn = item.status === "withdrawn";
+    const title = item.hidden ? "信笺正在倒计时" : item.title || "未命名信笺";
+    const body = withdrawn
+      ? "这封信笺已撤回。"
+      : unlocked || mine ? item.text || "还没有内容" : "倒计时结束后才可以查看内容。";
+    return `
+      <div class="rt-item ${withdrawn ? "done" : ""}">
+        <div class="rt-card-title">
+          <strong>${esc(title)}</strong>
+          <span>${withdrawn ? "已撤回" : unlocked ? "已投递" : remainingText(due)}</span>
+        </div>
+        <p>${esc(body)}</p>
+        <small>${esc(displayActor(item.actor, item.actorName))} 创建 · ${esc(formatTime(item.createdAt))}</small>
+        ${mine && !unlocked && !withdrawn ? `
+          <div class="rt-form-row compact">
+            <label>标题<input id="rtLetterTitle-${esc(item.id)}" value="${esc(item.title || "")}"></label>
+            <label>内容<textarea id="rtLetterText-${esc(item.id)}">${esc(item.text || "")}</textarea></label>
+            <button class="ghost" data-rt="letter-update" data-id="${esc(item.id)}">保存修改</button>
+            <button class="danger" data-rt="letter-withdraw" data-id="${esc(item.id)}">撤回</button>
+          </div>
+        ` : ""}
+      </div>
+    `;
+  }
+
+  function renderWhispers() {
+    const whispers = (app.realtime.whispers || []).filter((item) => item.to === (app.user && app.user.id) || item.actor === (app.user && app.user.id));
+    if (!whispers.length) return `<div class="empty">这里会显示未读悄悄话和发送状态。</div>`;
+    return whispers.slice(0, 8).map((item) => {
+      const mine = item.actor === (app.user && app.user.id);
+      const unreadForMe = item.to === (app.user && app.user.id) && !item.readAt && item.text;
+      return `
+        <div class="rt-item ${item.readAt ? "done" : ""}">
+          <strong>${mine ? `发给${esc(roleLabel(item.to))}` : `${esc(displayActor(item.actor, item.actorName))}发来的悄悄话`}</strong>
+          <p>${item.readAt ? "已阅读并销毁。" : unreadForMe ? "有一条只可阅读一次的消息。" : "等待对方阅读。"}</p>
+          ${unreadForMe ? `<button class="primary" data-rt="whisper-open" data-id="${esc(item.id)}">阅读并销毁</button>` : ""}
+        </div>
+      `;
+    }).join("");
+  }
+
+  // [新增] 云陪伴自习房间：同步计时/安静模式，白噪音在本机播放。
+  function renderStudyRoom() {
+    const study = app.realtime.study || defaultStudyState();
+    const elapsed = studyElapsed(study);
+    const progress = Math.min(100, Math.round(elapsed / Math.max(60, Number(study.goalMinutes || 25) * 60) * 100));
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>云陪伴自习房间</h3>
+          <span>${study.quietMode ? "安静模式中" : "可以轻声互动"}</span>
+        </div>
+        <div class="rt-grid two">
+          <div class="rt-focus-clock">
+            <strong>${formatDuration(elapsed)}</strong>
+            <span>${study.running ? "计时中" : "已暂停"} · 目标 ${Number(study.goalMinutes || 25)} 分钟</span>
+            <div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div>
+            <div class="rt-inline">
+              <button class="primary" data-rt="study-start">${safeIcon("play")}开始</button>
+              <button class="ghost" data-rt="study-pause">暂停</button>
+              <button class="ghost" data-rt="study-reset">重置</button>
+              <button class="${study.quietMode ? "danger" : "ghost"}" data-rt="study-quiet">${study.quietMode ? "关闭安静" : "安静模式"}</button>
+            </div>
+          </div>
+          <div class="rt-stack">
+            <div class="rt-presence-list">${renderPresenceRows()}</div>
+            <div class="rt-list-tabs">
+              ${whiteNoiseOptions.map(([key, label]) => `<button class="${study.noise === key ? "active" : ""}" data-rt="study-noise" data-noise="${key}">${label}</button>`).join("")}
+            </div>
+            <p class="small-note">白噪音受浏览器自动播放限制，只会在当前设备点击后播放；房间状态会同步给${esc(roleLabel(otherRoleId()))}。</p>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // [新增] 情绪光谱日历：按日期记录，并实时生成月报条形图。
+  function renderEmotionSpectrum() {
+    const monthKey = today().slice(0, 7);
+    const todayRecord = app.realtime.emotionCalendar?.[today()]?.[app.user && app.user.id] || null;
+    const selected = todayRecord?.emotion || app.selectedEmotion;
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>情绪光谱日历</h3>
+          <span>${monthKey} 月报</span>
+        </div>
+        <div class="rt-mood-buttons spectrum">
+          ${emotionOptions.map((item) => `<button style="--mood:${item.color}" class="${selected === item.key ? "active" : ""}" data-rt="emotion-select" data-emotion="${esc(item.key)}">${esc(item.label)}</button>`).join("")}
+        </div>
+        <label>今天的备注<textarea id="rtEmotionNote" placeholder="记录触发点、安抚方式或值得收藏的小事。">${esc(todayRecord?.note || "")}</textarea></label>
+        <button class="primary" data-rt="emotion-save">${safeIcon("save")}保存情绪光谱</button>
+        ${renderEmotionReport(monthKey)}
+      </div>
+    `;
+  }
+
+  function renderEmotionReport(monthKey) {
+    const records = app.realtime.emotionCalendar || {};
+    const days = Object.entries(records).filter(([date]) => date.startsWith(monthKey));
+    const rows = ROLE_IDS.map((role) => {
+      const counts = {};
+      let total = 0;
+      days.forEach(([, value]) => {
+        const item = value && value[role];
+        if (!item) return;
+        counts[item.emotion] = (counts[item.emotion] || 0) + 1;
+        total += 1;
+      });
+      return `
+        <div class="rt-spectrum-row">
+          <strong>${esc(roleLabel(role))}</strong>
+          <div>
+            ${emotionOptions.map((item) => `<i title="${esc(item.label)}" style="--mood:${item.color};width:${Math.max(6, Math.round((counts[item.key] || 0) / Math.max(1, total) * 100))}%"></i>`).join("")}
+          </div>
+          <span>${total} 天</span>
+        </div>
+      `;
+    }).join("");
+    return `<div class="rt-spectrum-report">${rows}</div>`;
+  }
+
+  // [新增] 引力值成长体系：互动越多，等级和特效越高。
+  function renderGravityPanel() {
+    const gravity = app.realtime.gravity || defaultGravityState();
+    const level = gravityLevel(gravity.points);
+    const next = gravityNext(level);
+    const progress = Math.min(100, Math.round((gravity.points - gravityBase(level)) / Math.max(1, next - gravityBase(level)) * 100));
+    return `
+      <div class="panel rt-stack rt-section rt-gravity-panel">
+        <div class="rt-card-title">
+          <h3>引力值成长体系</h3>
+          <span>Lv.${level}</span>
+        </div>
+        <div class="rt-gravity-orbit">
+          <strong>${Number(gravity.points || 0)}</strong>
+          <span>引力值</span>
+        </div>
+        <div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div>
+        <p class="small-note">打卡、浇水、完成目标、游玩同步小游戏都会增加引力值。Lv.2 解锁柔光特效，Lv.4 解锁专属背景。</p>
+        <div class="rt-inline">
+          <button class="primary" data-rt="gravity-certificate">${safeIcon("save")}生成电子纪念证书</button>
+          <span class="rt-meta">已生成 ${gravity.certificates?.length || 0} 张</span>
+        </div>
+        <div class="rt-stack">${(gravity.certificates || []).slice(0, 3).map(renderCertificate).join("")}</div>
+      </div>
+    `;
+  }
+
+  function renderCertificate(item) {
+    return `
+      <div class="rt-certificate">
+        <strong>电子纪念证书 · Lv.${Number(item.level || 1)}</strong>
+        <p>${esc(item.text || "谢谢你们认真经营这一段关系。")}</p>
+        <small>${esc(formatTime(item.createdAt))}</small>
+      </div>
+    `;
+  }
+
+  // [新增] 相册分类增强：不替换原相册，只追加一个可筛选/改分类视图。
+  function renderAlbumCategories() {
+    const album = getLegacyAlbum();
+    const filtered = app.albumCategoryFilter === "all"
+      ? album
+      : album.filter((entry) => (entry.item.category || "其他") === app.albumCategoryFilter);
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>相册分类</h3>
+          <span>${album.length} 张照片</span>
+        </div>
+        <div class="rt-list-tabs">
+          <button class="${app.albumCategoryFilter === "all" ? "active" : ""}" data-rt="album-filter" data-category="all">全部</button>
+          ${albumCategories.map((category) => `<button class="${app.albumCategoryFilter === category ? "active" : ""}" data-rt="album-filter" data-category="${esc(category)}">${esc(category)}</button>`).join("")}
+        </div>
+        <div class="rt-album-category-grid">
+          ${filtered.length ? filtered.slice(0, 12).map(renderAlbumCategoryCard).join("") : `<div class="empty">这个分类还没有照片。</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAlbumCategoryCard(entry) {
+    const item = entry.item;
+    return `
+      <div class="rt-album-category-card">
+        ${item.src ? `<img src="${esc(item.src)}" alt="">` : `<div class="rt-image-placeholder">照片</div>`}
+        <strong>${esc(item.caption || item.title || "未命名照片")}</strong>
+        <span class="rt-badge">${esc(item.category || "其他")}</span>
+        <div class="rt-option-cloud">
+          ${albumCategories.map((category) => `<button data-rt="album-set-category" data-index="${entry.index}" data-category="${esc(category)}">${esc(category)}</button>`).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  // [新增] 双人共享时间胶囊：未到期只展示封存状态，到期后展示双方内容。
+  function renderTimeCapsules() {
+    const capsules = app.realtime.capsules || [];
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>双人共享时间胶囊</h3>
+          <span>到期同步解锁</span>
+        </div>
+        <div class="rt-form-row">
+          <label>胶囊名<input id="rtCapsuleTitle" placeholder="例如：写给三个月后的我们"></label>
+          <label>解封日期<input id="rtCapsuleAt" type="datetime-local" value="${esc(dateTimeLocal(Date.now() + 7 * 86400000))}"></label>
+          <button class="primary" data-rt="capsule-create">${safeIcon("plus")}创建胶囊</button>
+        </div>
+        <div class="rt-stack">${capsules.length ? capsules.slice(0, 8).map(renderCapsuleCard).join("") : `<div class="empty">还没有时间胶囊。</div>`}</div>
+      </div>
+    `;
+  }
+
+  function renderCapsuleCard(item) {
+    const unlockAt = Date.parse(item.unlockAt || "");
+    const unlocked = unlockAt && Date.now() >= unlockAt;
+    const mine = item.entries && app.user ? item.entries[app.user.id] : null;
+    return `
+      <div class="rt-item">
+        <div class="rt-card-title">
+          <strong>${esc(item.title || "未命名胶囊")}</strong>
+          <span>${unlocked ? "已解封" : remainingText(unlockAt)}</span>
+        </div>
+        ${unlocked ? renderCapsuleEntries(item.entries || {}) : `<p>内容已封存，解封前双方都无法在页面查看。</p>`}
+        <div class="rt-form-row compact">
+          <label>我的写入<textarea id="rtCapsuleText-${esc(item.id)}" placeholder="${mine ? "可再次写入覆盖原内容" : "写入后会立即封存"}"></textarea></label>
+          <label>图片<input id="rtCapsuleImage-${esc(item.id)}" type="file" accept="image/*"></label>
+          <button class="primary" data-rt="capsule-entry" data-id="${esc(item.id)}">${safeIcon("save")}${mine ? "更新我的封存" : "写入胶囊"}</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCapsuleEntries(entries) {
+    return `<div class="rt-grid two">${ROLE_IDS.map((role) => {
+      const entry = entries[role];
+      return `
+        <div class="rt-item">
+          <strong>${esc(roleLabel(role))}</strong>
+          <p>${esc(entry && entry.text || "没有写入文字。")}</p>
+          ${entry && entry.image ? `<img class="rt-capsule-image" src="${esc(entry.image)}" alt="">` : ""}
+        </div>
+      `;
+    }).join("")}</div>`;
+  }
+
+  // [新增] 回忆抽签机：从已同步的原日记/留言/照片中抽一条。
+  function renderMemoryMachine() {
+    const current = app.realtime.memoryDraw?.current;
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>回忆抽签机</h3>
+          <span>${memoryPool().length} 条回忆</span>
+        </div>
+        <button class="primary" data-rt="memory-draw">${safeIcon("refresh")}随机翻一段回忆</button>
+        ${current ? `
+          <div class="rt-game-result">
+            <span class="rt-badge">${esc(current.kind || "回忆")}</span>
+            <strong>${esc(current.title || "一段回忆")}</strong>
+            <p>${esc(current.text || "")}</p>
+            ${current.image ? `<img class="rt-memory-image" src="${esc(current.image)}" alt="">` : ""}
+            <small>${esc(displayActor(current.actor, current.actorName))} 抽到</small>
+          </div>
+        ` : `<div class="empty">点击按钮，从历史日记、留言或照片里抽一段。</div>`}
+      </div>
+    `;
+  }
+
+  // [新增] 偏爱记录本：共享文档式编辑，保存后双端同步。
+  function renderPreferenceBook() {
+    const book = app.realtime.preferenceBook || {};
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>偏爱记录本</h3>
+          <span>共享文档</span>
+        </div>
+        <div class="rt-grid two">
+          ${preferenceFields.map(([key, label]) => `
+            <label>${label}<textarea id="rtPref-${key}" placeholder="记录${esc(roleLabel(otherRoleId()))}需要被记住的小细节">${esc(book[key] || "")}</textarea></label>
+          `).join("")}
+        </div>
+        <button class="primary" data-rt="preference-save">${safeIcon("save")}保存偏爱记录</button>
+        <p class="small-note">${book.updatedById ? `上次由 ${esc(displayActor(book.updatedById, book.updatedBy))} 更新` : "还没有保存过偏爱记录。"}</p>
+      </div>
+    `;
+  }
+
+  // [新增] 和解契约：未完成时锁定娱乐游戏，推动先修复关系。
+  function renderReconciliationPanel() {
+    const items = app.realtime.reconciliations || [];
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>和解契约</h3>
+          <span>${hasOpenReconciliation() ? "游戏暂停中" : "关系已恢复"}</span>
+        </div>
+        <div class="rt-form-row">
+          <label>矛盾点<input id="rtReconcileIssue" placeholder="只描述事实，不贴标签"></label>
+          <label>后续约定<textarea id="rtReconcileAgreement" placeholder="我们下次可以怎么更温柔地相处"></textarea></label>
+          <button class="primary" data-rt="reconcile-add">${safeIcon("plus")}登记契约</button>
+        </div>
+        <div class="rt-stack">${items.length ? items.slice(0, 8).map(renderReconciliationItem).join("") : `<div class="empty">没有未处理的矛盾契约。</div>`}</div>
+      </div>
+    `;
+  }
+
+  function renderReconciliationItem(item) {
+    const ack = item.ack || {};
+    const resolved = item.status === "resolved" || ROLE_IDS.every((id) => ack[id]);
+    return `
+      <div class="rt-item ${resolved ? "done" : ""}">
+        <strong>${esc(item.issue || "一次需要被认真对待的矛盾")}</strong>
+        <p>${esc(item.agreement || "还没有写下后续约定。")}</p>
+        <div class="rt-inline">
+          ${ROLE_IDS.map((id) => `<span class="rt-badge">${esc(roleLabel(id))}：${ack[id] ? "已确认" : "待确认"}</span>`).join("")}
+          ${!ack[app.user && app.user.id] ? `<button class="primary" data-rt="reconcile-ack" data-id="${esc(item.id)}">我确认</button>` : ""}
+          ${resolved ? `<button class="ghost" data-rt="reconcile-resolve" data-id="${esc(item.id)}">完成和解</button>` : ""}
+        </div>
+      </div>
+    `;
+  }
+
+  // [新增] 相遇轨迹地图：手动地点转为动态连线，不接入外部地图服务。
+  function renderMeetingMap() {
+    const points = app.realtime.meetingMap?.points || [];
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>相遇轨迹地图</h3>
+          <span>${points.length} 个地点</span>
+        </div>
+        <div class="rt-map-stage">${renderMapSvg(points)}</div>
+        <div class="rt-form-row">
+          <label>城市<input id="rtMapCity" placeholder="例如：杭州"></label>
+          <label>见面地点<input id="rtMapPlace" placeholder="例如：西湖边"></label>
+          <label>日期<input id="rtMapDate" type="date" value="${today()}"></label>
+          <button class="primary" data-rt="map-add">${safeIcon("plus")}标记</button>
+        </div>
+        <div class="rt-stack">${points.slice().reverse().slice(0, 8).map((item) => `
+          <div class="rt-item">
+            <strong>${esc(item.city)} · ${esc(item.place)}</strong>
+            <p>${esc(item.date || "")} ${esc(item.note || "")}</p>
+            <button class="danger" data-rt="map-delete" data-id="${esc(item.id)}">删除</button>
+          </div>
+        `).join("") || `<div class="empty">还没有标记相遇地点。</div>`}</div>
+      </div>
+    `;
+  }
+
+  function renderMapSvg(points) {
+    const normalized = points.map((item) => ({ ...item, ...pointPosition(item) }));
+    const line = normalized.map((point) => `${point.x},${point.y}`).join(" ");
+    return `
+      <svg viewBox="0 0 100 58" role="img" aria-label="相遇轨迹">
+        <defs><linearGradient id="rtMapLine" x1="0" x2="1"><stop stop-color="#ff8fab"/><stop offset="1" stop-color="#8dc8f4"/></linearGradient></defs>
+        <rect x="1" y="1" width="98" height="56" rx="12"></rect>
+        ${line ? `<polyline points="${line}" pathLength="1"></polyline>` : ""}
+        ${normalized.map((point) => `<g><circle cx="${point.x}" cy="${point.y}" r="2.5"></circle><text x="${point.x + 2}" y="${point.y - 2}">${esc(point.city).slice(0, 6)}</text></g>`).join("")}
+      </svg>
+    `;
+  }
+
+  // [新增] 共同成长目标清单：短/中/长期目标分组，双方打卡监督。
+  function renderGrowthGoals() {
+    const goals = app.realtime.growthGoals || defaultGrowthGoals();
+    const term = goalLabels[app.growthGoalTab] ? app.growthGoalTab : "short";
+    const list = goals[term] || [];
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>共同成长目标</h3>
+          <span>${goalLabels[term]}</span>
+        </div>
+        <div class="rt-list-tabs">
+          ${Object.entries(goalLabels).map(([key, label]) => `<button class="${term === key ? "active" : ""}" data-rt="goal-tab" data-term="${key}">${label}</button>`).join("")}
+        </div>
+        <div class="rt-form-row">
+          <label>目标<input id="rtGoalTitle" placeholder="例如：这个月一起读完一本书"></label>
+          <label>备注<input id="rtGoalNote" placeholder="可选监督方式"></label>
+          <button class="primary" data-rt="goal-add">${safeIcon("plus")}添加目标</button>
+        </div>
+        <div class="rt-stack">${list.length ? list.map((item) => renderGoalItem(term, item)).join("") : `<div class="empty">这一组还没有目标。</div>`}</div>
+      </div>
+    `;
+  }
+
+  function renderGoalItem(term, item) {
+    const checks = item.checks || {};
+    const done = ROLE_IDS.every((id) => checks[id]);
+    return `
+      <div class="rt-item ${done ? "done" : ""}">
+        <strong>${esc(item.title || "未命名目标")}</strong>
+        <p>${esc(item.note || "一起慢慢完成。")}</p>
+        <div class="rt-inline">
+          ${ROLE_IDS.map((id) => `<span class="rt-badge">${esc(roleLabel(id))}：${checks[id] ? "已打卡" : "未打卡"}</span>`).join("")}
+          <button class="ghost" data-rt="goal-check" data-term="${term}" data-id="${esc(item.id)}">我打卡</button>
+          <button class="danger" data-rt="goal-delete" data-term="${term}" data-id="${esc(item.id)}">删除</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // [新增] 默契拍卖场：双方用虚拟金币竞拍陪伴事项。
+  function renderAuctionGame() {
+    const auction = app.realtime.auction || defaultAuctionState();
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>默契拍卖场</h3>
+          <button class="ghost" data-rt="auction-reset">新一轮</button>
+        </div>
+        <div class="rt-auction-wallets">
+          ${ROLE_IDS.map((id) => `<span>${esc(roleLabel(id))}：${auction.coins?.[id] ?? 100} 金币</span>`).join("")}
+        </div>
+        <div class="rt-grid two">
+          ${(auction.items || []).map(renderAuctionItem).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAuctionItem(item) {
+    const bids = item.bids || {};
+    const winner = auctionWinner(item);
+    return `
+      <div class="rt-item">
+        <strong>${esc(item.title)}</strong>
+        <p>${winner ? `${esc(roleLabel(winner))} 暂时领先` : "还没有人出价"}</p>
+        <div class="rt-inline">
+          ${ROLE_IDS.map((id) => `<span class="rt-badge">${esc(roleLabel(id))} ${Number(bids[id] || 0)}</span>`).join("")}
+          <button class="primary" data-rt="auction-bid" data-id="${esc(item.id)}">加 10 金币</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // [新增] 命运选择题：匿名作答，双方都选完后自动对比。
+  function renderFateGame() {
+    const fate = app.realtime.fate || defaultFateState();
+    const current = fate.current;
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>命运选择题</h3>
+          <button class="ghost" data-rt="fate-reset">换一题</button>
+        </div>
+        ${current ? renderFateQuestion(current) : `<div class="empty">点击换一题开始匿名选择。</div>`}
+      </div>
+    `;
+  }
+
+  function renderFateQuestion(current) {
+    const answers = current.answers || {};
+    const mine = app.user && answers[app.user.id];
+    const bothDone = ROLE_IDS.every((id) => answers[id]);
+    return `
+      <div class="rt-game-result">
+        <strong>${esc(current.text)}</strong>
+        <div class="rt-quiz-options">
+          ${(current.options || []).map((option) => `<button class="${mine === option ? "active" : ""}" data-rt="fate-answer" data-answer="${esc(option)}">${esc(option)}</button>`).join("")}
+        </div>
+        ${bothDone ? `
+          <div class="rt-grid two">
+            ${ROLE_IDS.map((id) => `<div class="rt-item"><strong>${esc(roleLabel(id))}</strong><p>${esc(answers[id])}</p></div>`).join("")}
+          </div>
+        ` : `<p class="rt-meta">已匿名作答 ${Object.keys(answers).length} / 2，双方都答完才展示对比。</p>`}
       </div>
     `;
   }
@@ -1596,6 +2442,7 @@
         state.album.unshift({
           src: image,
           caption: `双人涂鸦 ${new Date().toLocaleString()}`,
+          category: "涂鸦",
           createdAt: new Date().toISOString(),
           actor: app.user && app.user.id || "",
           actorName: app.user && app.user.name || "离线"
@@ -1685,12 +2532,20 @@
     sendOperation("theme.set", { theme });
   }
 
+  function currentTheme() {
+    const role = app.user && app.user.id;
+    return app.realtime.themePrefs && role && app.realtime.themePrefs[role]
+      ? app.realtime.themePrefs[role]
+      : app.realtime.theme || "macaron";
+  }
+
   function applyTheme(theme) {
     document.documentElement.classList.toggle("rt-theme-night", theme === "night");
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "night" ? "#17151f" : "#fff3f6");
   }
 
   function sendMissYou() {
+    if (!canSendMessage()) return;
     if (!app.user) {
       sendOperation("miss-you", { id: uuid(), message: "我想你啦" });
       return;
@@ -1733,6 +2588,7 @@
   }
 
   function addSweetTask() {
+    if (!canSendMessage()) return;
     const title = valueOf("rtTaskTitle").trim();
     const detail = valueOf("rtTaskDetail").trim();
     if (!title) {
@@ -1793,6 +2649,7 @@
   }
 
   function drawTruthDare() {
+    if (hasOpenReconciliation()) return toast("和解契约未完成，小游戏暂时锁定。");
     const category = normalizeTruthDareCategory(app.truthDareCategory);
     const mode = app.truthDareMode === "dare" ? "dare" : "truth";
     const pool = getTruthDarePool(category, mode);
@@ -1804,6 +2661,7 @@
   }
 
   function spinDateWheel() {
+    if (hasOpenReconciliation()) return toast("和解契约未完成，小游戏暂时锁定。");
     const pool = dateWheelOptions.map((text, index) => ({ id: `date-${index}`, text }));
     const item = pickWithoutRecent(pool, app.realtime.dateWheel && app.realtime.dateWheel.recentIds);
     if (!item) return;
@@ -1815,6 +2673,7 @@
   }
 
   function drawFortune() {
+    if (hasOpenReconciliation()) return toast("和解契约未完成，小游戏暂时锁定。");
     const pool = fortuneNotes.map((text, index) => ({ id: `fortune-${index}`, text }));
     const item = pickWithoutRecent(pool, app.realtime.fortune && app.realtime.fortune.recentIds);
     if (!item) return;
@@ -1824,19 +2683,250 @@
   }
 
   function tapPulse() {
+    if (hasOpenReconciliation()) return toast("和解契约未完成，小游戏暂时锁定。");
     sendOperation("pulse.tap", { amount: 1 });
   }
 
   function resetPulse() {
+    if (hasOpenReconciliation()) return toast("和解契约未完成，小游戏暂时锁定。");
     sendOperation("pulse.reset", {});
   }
 
   function answerQuiz(questionId, answer) {
+    if (hasOpenReconciliation()) return toast("和解契约未完成，小游戏暂时锁定。");
     sendOperation("quiz.answer", { questionId, answer });
   }
 
   function resetQuiz() {
+    if (hasOpenReconciliation()) return toast("和解契约未完成，小游戏暂时锁定。");
     sendOperation("quiz.reset", { id: uuid() });
+  }
+
+  // [新增] 延时信笺：发送者可在投递前修改/撤回。
+  function sendDelayedLetter() {
+    if (!canSendMessage()) return;
+    const title = valueOf("rtLetterTitle").trim();
+    const text = valueOf("rtLetterText").trim();
+    const rawTime = valueOf("rtLetterAt");
+    const parsed = Date.parse(rawTime);
+    if (!title || !text || Number.isNaN(parsed)) {
+      toast("请写完整信笺标题、内容和投递时间。");
+      return;
+    }
+    const deliverAt = new Date(parsed).toISOString();
+    sendOperation("delayedLetter.create", { id: uuid(), title, text, deliverAt });
+    setValue("rtLetterTitle", "");
+    setValue("rtLetterText", "");
+  }
+
+  function updateDelayedLetter(id) {
+    const item = (app.realtime.delayedLetters || []).find((entry) => entry.id === id);
+    if (!item || item.actor !== (app.user && app.user.id) || Date.now() >= Date.parse(item.deliverAt || "")) return;
+    sendOperation("delayedLetter.update", {
+      id,
+      title: valueOf(`rtLetterTitle-${id}`).trim(),
+      text: valueOf(`rtLetterText-${id}`).trim()
+    });
+  }
+
+  function withdrawDelayedLetter(id) {
+    const item = (app.realtime.delayedLetters || []).find((entry) => entry.id === id);
+    if (!item || item.actor !== (app.user && app.user.id) || Date.now() >= Date.parse(item.deliverAt || "")) return;
+    sendOperation("delayedLetter.withdraw", { id });
+  }
+
+  // [新增] 限时悄悄话：只给接收方展示一次，读完立即发送销毁操作。
+  function sendSecretWhisper() {
+    if (!canSendMessage()) return;
+    const text = valueOf("rtWhisperText").trim();
+    if (!text) return toast("先写一句悄悄话。");
+    sendOperation("whisper.send", { id: uuid(), to: otherRoleId(), text });
+    setValue("rtWhisperText", "");
+  }
+
+  function openSecretWhisper(id) {
+    const item = (app.realtime.whispers || []).find((entry) => entry.id === id);
+    if (!item || item.to !== (app.user && app.user.id) || !item.text || item.readAt) return;
+    const layer = document.createElement("div");
+    layer.className = "rt-secret-layer";
+    layer.innerHTML = `
+      <div class="modal rt-stack">
+        <h3>限时悄悄话</h3>
+        <p>${esc(item.text)}</p>
+        <button class="primary">我读完了，销毁</button>
+      </div>
+    `;
+    layer.querySelector("button").addEventListener("click", () => {
+      layer.remove();
+      sendOperation("whisper.read", { id });
+    });
+    document.body.appendChild(layer);
+  }
+
+  // [新增] 时间胶囊。
+  function createCapsule() {
+    const title = valueOf("rtCapsuleTitle").trim();
+    const parsed = Date.parse(valueOf("rtCapsuleAt"));
+    if (!title || Number.isNaN(parsed)) return toast("请填写胶囊名和解封日期。");
+    const unlockAt = new Date(parsed).toISOString();
+    sendOperation("capsule.create", { id: uuid(), title, unlockAt });
+    setValue("rtCapsuleTitle", "");
+  }
+
+  async function saveCapsuleEntry(id) {
+    const text = valueOf(`rtCapsuleText-${id}`).trim();
+    const file = document.getElementById(`rtCapsuleImage-${id}`)?.files?.[0];
+    const image = file ? await readImageAsDataUrl(file) : "";
+    if (!text && !image) return toast("请写入文字或选择图片。");
+    sendOperation("capsule.entry", { id, text, image });
+    setValue(`rtCapsuleText-${id}`, "");
+  }
+
+  // [新增] 自习房计时/安静模式/白噪音。
+  function startStudyTimer() {
+    const study = app.realtime.study || defaultStudyState();
+    sendOperation("study.timer", {
+      running: true,
+      startedAt: new Date().toISOString(),
+      elapsedSeconds: studyElapsed(study),
+      goalMinutes: Number(study.goalMinutes || 25)
+    });
+  }
+
+  function pauseStudyTimer() {
+    const study = app.realtime.study || defaultStudyState();
+    sendOperation("study.timer", {
+      running: false,
+      startedAt: "",
+      elapsedSeconds: studyElapsed(study),
+      goalMinutes: Number(study.goalMinutes || 25)
+    });
+  }
+
+  function resetStudyTimer() {
+    sendOperation("study.timer", { running: false, startedAt: "", elapsedSeconds: 0, goalMinutes: 25 });
+  }
+
+  function toggleQuietMode() {
+    sendOperation("study.quiet", { quietMode: !Boolean(app.realtime.study?.quietMode) });
+  }
+
+  function setStudyNoise(noise) {
+    sendOperation("study.noise", { noise: normalizeNoise(noise) });
+  }
+
+  function selectEmotion(emotion) {
+    app.selectedEmotion = normalizeEmotion(emotion);
+    renderAddon();
+  }
+
+  function saveEmotionSpectrum() {
+    sendOperation("emotionSpectrum.check", {
+      date: today(),
+      emotion: app.selectedEmotion,
+      note: valueOf("rtEmotionNote").trim()
+    });
+  }
+
+  function savePreferenceBook() {
+    const patch = {};
+    preferenceFields.forEach(([key]) => {
+      patch[key] = valueOf(`rtPref-${key}`).trim();
+    });
+    sendOperation("preference.update", { patch });
+  }
+
+  function addReconciliation() {
+    const issue = valueOf("rtReconcileIssue").trim();
+    const agreement = valueOf("rtReconcileAgreement").trim();
+    if (!issue || !agreement) return toast("请写清矛盾点和后续约定。");
+    sendOperation("reconciliation.add", { id: uuid(), issue, agreement });
+    setValue("rtReconcileIssue", "");
+    setValue("rtReconcileAgreement", "");
+  }
+
+  function acknowledgeReconciliation(id) {
+    sendOperation("reconciliation.ack", { id });
+  }
+
+  function resolveReconciliation(id) {
+    sendOperation("reconciliation.resolve", { id });
+  }
+
+  function resetAuction() {
+    if (hasOpenReconciliation()) return toast("先完成和解契约，再开启娱乐小游戏。");
+    sendOperation("auction.reset", { round: Number(app.realtime.auction?.round || 0) + 1 });
+  }
+
+  function bidAuctionItem(id) {
+    if (hasOpenReconciliation()) return toast("和解契约未完成，小游戏暂时锁定。");
+    sendOperation("auction.bid", { id, amount: 10 });
+  }
+
+  function resetFateQuestion() {
+    if (hasOpenReconciliation()) return toast("先完成和解契约，再开启娱乐小游戏。");
+    sendOperation("fate.reset", { question: randomFateQuestion() });
+  }
+
+  function answerFateQuestion(answer) {
+    if (hasOpenReconciliation()) return toast("和解契约未完成，小游戏暂时锁定。");
+    sendOperation("fate.answer", { answer });
+  }
+
+  function createGravityCertificate() {
+    const level = gravityLevel(app.realtime.gravity?.points || 0);
+    sendOperation("gravity.certificate", {
+      id: uuid(),
+      text: `你们已经积累到 Lv.${level} 引力值，继续把日常变成纪念。`
+    });
+  }
+
+  function addMeetingPoint() {
+    const city = valueOf("rtMapCity").trim();
+    const place = valueOf("rtMapPlace").trim();
+    const date = valueOf("rtMapDate") || today();
+    if (!city || !place) return toast("请写城市和见面地点。");
+    sendOperation("meeting.add", { id: uuid(), city, place, date });
+    setValue("rtMapCity", "");
+    setValue("rtMapPlace", "");
+  }
+
+  function deleteMeetingPoint(id) {
+    sendOperation("meeting.delete", { id });
+  }
+
+  function drawMemory() {
+    const pool = memoryPool();
+    if (!pool.length) return toast("还没有可抽取的历史日记、留言或照片。");
+    const memory = pool[Math.floor(Math.random() * pool.length)];
+    sendOperation("memory.draw", { memory });
+  }
+
+  function addGrowthGoal() {
+    const title = valueOf("rtGoalTitle").trim();
+    const note = valueOf("rtGoalNote").trim();
+    if (!title) return toast("先写一个共同成长目标。");
+    sendOperation("growthGoal.add", { term: app.growthGoalTab, id: uuid(), title, note });
+    setValue("rtGoalTitle", "");
+    setValue("rtGoalNote", "");
+  }
+
+  function checkGrowthGoal(term, id) {
+    sendOperation("growthGoal.check", { term, id });
+  }
+
+  function deleteGrowthGoal(term, id) {
+    sendOperation("growthGoal.delete", { term, id });
+  }
+
+  function setAlbumCategory(index, category) {
+    const legacy = getLegacyState();
+    if (!legacy || !Array.isArray(legacy.album) || !legacy.album[index]) return;
+    legacy.album[index].category = albumCategories.includes(category) ? category : "其他";
+    if (typeof persistNow === "function") persistNow({ toast: "相册分类已更新。" });
+    if (typeof renderAlbum === "function") renderAlbum();
+    scheduleLegacySync("更新相册分类");
+    renderAddon();
   }
 
   function notifyRemote(op) {
@@ -1860,6 +2950,25 @@
       "pulse.tap": "点亮了一次心动接力",
       "pulse.reset": "开启了新一轮心动接力",
       "quiz.answer": "回答了一道默契题",
+      "delayedLetter.create": "放入了一封延时信笺",
+      "delayedLetter.update": "修改了一封延时信笺",
+      "delayedLetter.withdraw": "撤回了一封延时信笺",
+      "whisper.send": "发送了一条限时悄悄话",
+      "capsule.create": "创建了一个时间胶囊",
+      "capsule.entry": "写入了时间胶囊",
+      "study.timer": "更新了自习房计时",
+      "study.quiet": "切换了安静模式",
+      "emotionSpectrum.check": "记录了情绪光谱",
+      "preference.update": "更新了偏爱记录本",
+      "reconciliation.add": "登记了和解契约",
+      "reconciliation.ack": "确认了和解契约",
+      "auction.bid": "在默契拍卖场出价",
+      "fate.answer": "回答了命运选择题",
+      "gravity.certificate": "生成了电子纪念证书",
+      "meeting.add": "标记了相遇地点",
+      "memory.draw": "抽取了一段回忆",
+      "growthGoal.add": "添加了共同成长目标",
+      "growthGoal.check": "完成了一次目标打卡",
       "theme.set": "切换了主题"
     };
     toast(`${actor}${map[op.type] || "更新了内容"}。`);
@@ -1888,7 +2997,15 @@
       "date-wheel-spin": "转约会转盘",
       "fortune-draw": "抽甜蜜签",
       "pulse-tap": "点亮心动接力",
-      "quiz-answer": "回答默契题"
+      "quiz-answer": "回答默契题",
+      "letter-send": "写延时信笺",
+      "whisper-send": "发送悄悄话",
+      "capsule-entry": "写时间胶囊",
+      "study-start": "云陪伴自习",
+      "emotion-save": "记录情绪",
+      "preference-save": "编辑偏爱记录",
+      "auction-bid": "默契拍卖",
+      "fate-answer": "命运选择"
     };
     return map[action] || "正在操作";
   }
@@ -2091,10 +3208,282 @@
     }, 1200);
   }
 
+  // [新增] 默认数据与工具函数，保证旧数据升级后也能直接合并运行。
+  function defaultStudyState() {
+    return { running: false, startedAt: "", elapsedSeconds: 0, goalMinutes: 25, quietMode: false, noise: "off", updatedAt: "" };
+  }
+
+  function defaultGrowthGoals() {
+    return { short: [], mid: [], long: [] };
+  }
+
+  function defaultGravityState() {
+    return { points: 0, level: 1, history: [], certificates: [] };
+  }
+
+  function defaultAuctionState() {
+    return createAuctionRound(1, new Date().toISOString(), { actor: { id: "", name: "系统" } });
+  }
+
+  function createAuctionRound(round, at, op) {
+    const fallbackAuctionCatalog = [
+      "一次认真视频约会", "下次见面路线选择权", "睡前故事十分钟", "周末共同电影", "一次无条件夸夸", "一起完成一顿饭"
+    ];
+    return {
+      round: Number(round || 1),
+      coins: { A: 100, B: 100 },
+      items: fallbackAuctionCatalog.map((title, index) => ({ id: `auction-${round}-${index}`, title, bids: {} })),
+      createdAt: at,
+      createdBy: op.actor && op.actor.name || "系统"
+    };
+  }
+
+  function defaultFateState() {
+    return {
+      current: {
+        id: "fate-1",
+        text: "如果只剩一个周末，你们更想怎么过？",
+        options: ["窝在家里", "去陌生城市"],
+        answers: {},
+        createdAt: new Date().toISOString(),
+        createdBy: "系统"
+      }
+    };
+  }
+
+  function randomFateQuestion() {
+    return clone(fateQuestions[Math.floor(Math.random() * fateQuestions.length)]);
+  }
+
+  function canSendMessage() {
+    if (!app.realtime.study?.quietMode) return true;
+    const now = Date.now();
+    if (now - app.quietDraftBlockedAt > 1800) {
+      app.quietDraftBlockedAt = now;
+      toast("安静模式已开启，暂时不能发送消息，只保留在线陪伴状态。");
+    }
+    return false;
+  }
+
+  function hasOpenReconciliation() {
+    return (app.realtime.reconciliations || []).some((item) => item.status !== "resolved");
+  }
+
+  function applyEntertainmentLock() {
+    const tab = document.getElementById("tab-games");
+    if (!tab) return;
+    const locked = hasOpenReconciliation();
+    tab.classList.toggle("rt-games-locked", locked);
+    tab.querySelectorAll("button").forEach((button) => {
+      if (button.closest(".bottom-nav")) return;
+      button.disabled = locked;
+      button.title = locked ? "和解契约完成后解锁" : "";
+    });
+  }
+
+  function studyElapsed(study) {
+    const base = Number(study.elapsedSeconds || 0);
+    if (!study.running || !study.startedAt) return base;
+    return Math.max(0, base + Math.floor((Date.now() - Date.parse(study.startedAt)) / 1000));
+  }
+
+  function normalizeNoise(noise) {
+    return whiteNoiseOptions.some(([key]) => key === noise) ? noise : "off";
+  }
+
+  function syncNoisePlayback(noise) {
+    if (noise === "off") {
+      stopNoise();
+      return;
+    }
+    startNoise(noise);
+  }
+
+  function startNoise(noise) {
+    try {
+      stopNoise();
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const buffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
+      const source = ctx.createBufferSource();
+      const filter = ctx.createBiquadFilter();
+      filter.type = noise === "waves" ? "lowpass" : noise === "cafe" ? "bandpass" : "highpass";
+      filter.frequency.value = noise === "waves" ? 420 : noise === "cafe" ? 880 : 1200;
+      const gain = ctx.createGain();
+      gain.gain.value = noise === "white" ? 0.045 : 0.035;
+      source.buffer = buffer;
+      source.loop = true;
+      source.connect(filter).connect(gain).connect(ctx.destination);
+      source.start();
+      app.noiseSource = source;
+      app.noiseContext = ctx;
+    } catch (error) {
+      toast("浏览器暂时不允许播放白噪音，请再点一次。");
+    }
+  }
+
+  function stopNoise() {
+    try { app.noiseSource && app.noiseSource.stop(); } catch (error) {}
+    try { app.noiseContext && app.noiseContext.close(); } catch (error) {}
+    app.noiseSource = null;
+    app.noiseContext = null;
+  }
+
+  function normalizeEmotion(emotion) {
+    return emotionOptions.some((item) => item.key === emotion) ? emotion : "晴";
+  }
+
+  function normalizeGoalTerm(term) {
+    return goalLabels[term] ? term : "short";
+  }
+
+  function grantGravityForOperation(realtime, op, at) {
+    const rewards = {
+      "mood.check": 2,
+      "emotionSpectrum.check": 2,
+      "task.update": 1,
+      "tree.water": 1,
+      "doodle.saved": 2,
+      "truthDare.draw": 1,
+      "dateWheel.spin": 1,
+      "fortune.draw": 1,
+      "pulse.tap": 1,
+      "quiz.answer": 1,
+      "auction.bid": 1,
+      "fate.answer": 1,
+      "growthGoal.check": 3,
+      "memory.draw": 1,
+      "meeting.add": 2,
+      "capsule.entry": 2,
+      "delayedLetter.create": 2,
+      "whisper.send": 1
+    };
+    const amount = rewards[op.type] || 0;
+    if (!amount) return;
+    realtime.gravity ||= defaultGravityState();
+    realtime.gravity.points = Number(realtime.gravity.points || 0) + amount;
+    realtime.gravity.level = gravityLevel(realtime.gravity.points);
+    realtime.gravity.history = (realtime.gravity.history || []).concat({
+      type: op.type,
+      amount,
+      actor: op.actor && op.actor.id || "",
+      actorName: op.actor && op.actor.name || "",
+      createdAt: at
+    }).slice(-120);
+    applyGravityEffects(realtime.gravity);
+  }
+
+  function gravityLevel(points) {
+    return Math.max(1, Math.floor(Math.sqrt(Number(points || 0) / 12)) + 1);
+  }
+
+  function gravityBase(level) {
+    return Math.pow(Math.max(0, level - 1), 2) * 12;
+  }
+
+  function gravityNext(level) {
+    return Math.pow(level, 2) * 12;
+  }
+
+  function applyGravityEffects(gravity) {
+    const level = gravityLevel(gravity && gravity.points);
+    document.documentElement.classList.toggle("rt-gravity-glow", level >= 2);
+    document.documentElement.classList.toggle("rt-gravity-bg", level >= 4);
+  }
+
+  function getLegacyAlbum() {
+    const legacy = getLegacyState() || {};
+    return Array.isArray(legacy.album) ? legacy.album.map((item, index) => ({ item, index })) : [];
+  }
+
+  function memoryPool() {
+    const legacy = getLegacyState() || {};
+    const pool = [];
+    const collections = legacy.collections || {};
+    if (Array.isArray(collections.diary)) {
+      collections.diary.forEach((item) => pool.push({
+        kind: "日记",
+        title: item.title || item.date || "一篇日记",
+        text: item.text || item.content || item.note || "",
+        actor: item.actor,
+        actorName: item.actorName
+      }));
+    }
+    Object.entries(collections).forEach(([key, list]) => {
+      if (key === "diary" || !Array.isArray(list)) return;
+      list.slice(0, 30).forEach((item) => {
+        if (item && (item.text || item.content || item.title)) {
+          pool.push({ kind: "留言", title: item.title || key, text: item.text || item.content || item.note || "", actor: item.actor, actorName: item.actorName });
+        }
+      });
+    });
+    getLegacyAlbum().forEach(({ item }) => pool.push({
+      kind: "照片",
+      title: item.caption || item.title || "一张照片",
+      text: item.category ? `分类：${item.category}` : "",
+      image: item.src || "",
+      actor: item.actor,
+      actorName: item.actorName
+    }));
+    return pool.filter((item) => item.title || item.text || item.image);
+  }
+
+  function auctionWinner(item) {
+    const bids = item.bids || {};
+    const a = Number(bids.A || 0);
+    const b = Number(bids.B || 0);
+    if (!a && !b) return "";
+    if (a === b) return "";
+    return a > b ? "A" : "B";
+  }
+
+  function pointPosition(item) {
+    if (Number.isFinite(Number(item.x)) && Number.isFinite(Number(item.y))) return { x: Number(item.x), y: Number(item.y) };
+    const seed = stableHash(`${item.city || ""}${item.place || ""}`);
+    const n = parseInt(seed.slice(0, 6), 16) || 1;
+    return { x: 10 + n % 80, y: 10 + Math.floor(n / 80) % 38 };
+  }
+
+  function dateTimeLocal(value) {
+    const date = new Date(value);
+    date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+    return date.toISOString().slice(0, 16);
+  }
+
+  function remainingText(time) {
+    if (!time || Number.isNaN(time)) return "等待时间";
+    const diff = time - Date.now();
+    if (diff <= 0) return "已到期";
+    const minutes = Math.ceil(diff / 60000);
+    if (minutes < 60) return `${minutes} 分钟后`;
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    if (hours < 24) return `${hours} 小时${rest ? ` ${rest} 分` : ""}后`;
+    return `${Math.ceil(hours / 24)} 天后`;
+  }
+
+  function formatDuration(seconds) {
+    seconds = Math.max(0, Number(seconds || 0));
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor(seconds % 3600 / 60);
+    const s = seconds % 60;
+    return [h, m, s].map((value) => String(value).padStart(2, "0")).join(":");
+  }
+
+  function formatTime(input) {
+    const time = Date.parse(input || "");
+    if (!time) return "刚刚";
+    return new Date(time).toLocaleString();
+  }
+
   function defaultRealtimeState() {
     return {
       schema: 2,
       theme: "macaron",
+      themePrefs: { A: "macaron", B: "macaron" },
       moods: {},
       tasks: [],
       tree: { level: 1, water: 0, totalWater: 0, lastWateredBy: "", lastWateredById: "", history: [] },
@@ -2105,6 +3494,19 @@
       dateWheel: { current: null, recentIds: [], rotation: 0, updatedAt: "" },
       fortune: { current: null, recentIds: [], updatedAt: "" },
       pulse: defaultPulseState(),
+      delayedLetters: [],
+      whispers: [],
+      capsules: [],
+      study: defaultStudyState(),
+      emotionCalendar: {},
+      preferenceBook: { likes: "", avoid: "", triggers: "", comfort: "", updatedAt: "" },
+      reconciliations: [],
+      auction: defaultAuctionState(),
+      fate: defaultFateState(),
+      gravity: defaultGravityState(),
+      meetingMap: { points: [] },
+      memoryDraw: { current: null, updatedAt: "" },
+      growthGoals: defaultGrowthGoals(),
       lists: { travel: [], dates: [], shopping: [] },
       calmMemos: [],
       missYouEvents: [],
@@ -2235,6 +3637,21 @@
       reader.readAsDataURL(file);
     }).catch((error) => {
       toast(error.message || "读取文件失败。");
+      return "";
+    });
+  }
+
+  function readImageAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      if (!file) return resolve("");
+      if (!/^image\//.test(file.type || "")) return reject(new Error("请选择图片文件。"));
+      if (file.size > 4 * 1024 * 1024) return reject(new Error("图片超过 4MB，建议压缩后再上传。"));
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    }).catch((error) => {
+      toast(error.message || "读取图片失败。");
       return "";
     });
   }
