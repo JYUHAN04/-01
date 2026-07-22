@@ -11,9 +11,6 @@ const PORT = Number(process.env.PORT || 3000);
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, "data");
 const STATE_FILE = path.join(DATA_DIR, "love-state.json");
-const IS_PRODUCTION =
-  process.env.NODE_ENV === "production" ||
-  Object.keys(process.env).some((key) => key.startsWith("RAILWAY_"));
 const AUTH_SECRET = readEnv("AUTH_SECRET", "dev-secret-change-me");
 const HEARTBEAT_INTERVAL = 30000;
 const MAX_BODY = 2 * 1024 * 1024;
@@ -40,9 +37,7 @@ const MIME = {
 function readEnv(name, fallback) {
   const value = process.env[name];
   if (value && String(value).trim()) return String(value).trim();
-  if (IS_PRODUCTION) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
+  // Railway variables are still preferred, but defaults keep zero-variable deploys usable.
   return fallback;
 }
 
