@@ -1,0 +1,443 @@
+html.rt-theme-night {
+  --cream: #17151f;
+  --milk: #211f2b;
+  --peach: #f1a7b8;
+  --peach-strong: #ff8fab;
+  --blue: #8db7d8;
+  --blue-strong: #7fb7ea;
+  --mint: #8fcfbe;
+  --lemon: #f2d27c;
+  --ink: #f7edf3;
+  --muted: #c7b8c4;
+  --line: rgba(255, 213, 224, 0.22);
+  --shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+  --soft-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+html.rt-theme-night body {
+  background:
+    radial-gradient(circle at 2px 2px, rgba(255, 143, 171, 0.16) 1px, transparent 1.2px),
+    linear-gradient(180deg, #17151f 0, #211b2a 48%, #132533 100%);
+  background-size: 26px 26px, 100% 100%;
+}
+
+html.rt-theme-night .topbar,
+html.rt-theme-night .bottom-nav,
+html.rt-theme-night .modal,
+html.rt-theme-night .toast,
+html.rt-theme-night .mini-card,
+html.rt-theme-night .module,
+html.rt-theme-night .panel,
+html.rt-theme-night .record-card,
+html.rt-theme-night .soft-box {
+  background-color: rgba(33, 31, 43, 0.9);
+}
+
+.rt-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #b7c1ca;
+  box-shadow: 0 0 0 4px rgba(183, 193, 202, 0.16);
+}
+
+.rt-dot.online {
+  background: #52c58a;
+  box-shadow: 0 0 0 4px rgba(82, 197, 138, 0.16);
+}
+
+.rt-section {
+  margin: 18px 0 0;
+}
+
+.rt-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.rt-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.rt-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.rt-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.rt-card-title h3,
+.rt-card-title h4 {
+  margin: 0;
+  line-height: 1.25;
+}
+
+.rt-card-title span,
+.rt-meta,
+.rt-item small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rt-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rt-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.rt-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.rt-form-row.two {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.rt-item {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+html.rt-theme-night .rt-item {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.rt-item.done {
+  opacity: 0.7;
+}
+
+.rt-item.done strong,
+.rt-item.done p {
+  text-decoration: line-through;
+}
+
+.rt-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.rt-actor-tag {
+  width: max-content;
+  margin-top: 6px;
+}
+
+.rt-account-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 170;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(75, 55, 65, 0.32);
+  backdrop-filter: blur(12px);
+}
+
+.rt-account-layer .modal {
+  display: grid;
+  gap: 12px;
+}
+
+.rt-theme-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rt-theme-toggle button {
+  border-radius: 18px;
+}
+
+.rt-theme-toggle button.active {
+  background: linear-gradient(135deg, var(--peach), var(--blue));
+  font-weight: 900;
+}
+
+.rt-presence-list {
+  display: grid;
+  gap: 8px;
+}
+
+.rt-presence-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.52);
+}
+
+html.rt-theme-night .rt-presence-row {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.rt-mood-buttons {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rt-mood-buttons button {
+  min-height: 58px;
+  border-radius: 18px;
+  padding: 8px 4px;
+  box-shadow: none;
+}
+
+.rt-mood-buttons button.active {
+  background: linear-gradient(135deg, rgba(255, 216, 222, 0.9), rgba(217, 239, 255, 0.9));
+  font-weight: 900;
+}
+
+.rt-tree-stage {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(223, 245, 239, 0.45), rgba(255, 242, 186, 0.26));
+}
+
+.rt-tree {
+  position: relative;
+  width: 116px;
+  height: 146px;
+}
+
+.rt-tree-trunk {
+  position: absolute;
+  right: 48px;
+  bottom: 18px;
+  width: 22px;
+  height: 58px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #b7855b, #8f643f);
+}
+
+.rt-tree-crown {
+  position: absolute;
+  left: 50%;
+  bottom: 62px;
+  width: var(--tree-size, 88px);
+  height: var(--tree-size, 88px);
+  border-radius: 46% 54% 48% 52%;
+  background: radial-gradient(circle at 35% 30%, #fff2ba 0 12%, #9bd9bc 13% 100%);
+  transform: translateX(-50%);
+  box-shadow: 0 12px 24px rgba(80, 143, 113, 0.2);
+}
+
+.rt-tree-pot {
+  position: absolute;
+  left: 28px;
+  bottom: 0;
+  width: 62px;
+  height: 34px;
+  border-radius: 0 0 18px 18px;
+  background: linear-gradient(135deg, var(--peach), var(--blue));
+}
+
+.rt-doodle-shell {
+  display: grid;
+  gap: 10px;
+}
+
+.rt-doodle-tools {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+#rtDoodleCanvas {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  max-height: 520px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--soft-shadow);
+  touch-action: none;
+}
+
+.rt-music-now {
+  min-height: 54px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255, 244, 247, 0.92), rgba(235, 248, 255, 0.92));
+  font-weight: 800;
+}
+
+html.rt-theme-night .rt-music-now {
+  background: linear-gradient(135deg, rgba(255, 143, 171, 0.16), rgba(127, 183, 234, 0.16));
+}
+
+.rt-audio {
+  width: 100%;
+}
+
+.rt-list-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rt-list-tabs button {
+  border-radius: 18px;
+  box-shadow: none;
+}
+
+.rt-list-tabs button.active {
+  background: linear-gradient(135deg, rgba(255, 216, 222, 0.9), rgba(217, 239, 255, 0.9));
+  font-weight: 900;
+}
+
+.rt-quiz-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rt-quiz-options button {
+  min-height: 60px;
+  border-radius: 18px;
+  white-space: normal;
+}
+
+.rt-quiz-options button.active {
+  background: linear-gradient(135deg, var(--peach), var(--blue));
+  font-weight: 900;
+}
+
+.rt-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rt-stat {
+  min-height: 82px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.58);
+  text-align: center;
+}
+
+html.rt-theme-night .rt-stat {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.rt-stat strong {
+  display: block;
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.rt-heart-blast {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: rgba(255, 216, 222, 0.22);
+  animation: rtFade 3.4s ease forwards;
+}
+
+.rt-heart-blast strong {
+  position: relative;
+  z-index: 2;
+  max-width: min(86vw, 620px);
+  padding: 18px 22px;
+  border-radius: 28px;
+  background: rgba(255, 253, 251, 0.92);
+  box-shadow: var(--shadow);
+  text-align: center;
+  font-size: clamp(24px, 7vw, 52px);
+  line-height: 1.15;
+}
+
+.rt-heart {
+  position: absolute;
+  left: var(--x);
+  bottom: -40px;
+  color: var(--peach-strong);
+  font-size: var(--s);
+  animation: rtFloat var(--d) ease-in forwards;
+  opacity: 0.82;
+}
+
+@keyframes rtFloat {
+  from {
+    transform: translateY(0) scale(0.72) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.9;
+  }
+  to {
+    transform: translateY(-112vh) scale(1.08) rotate(18deg);
+    opacity: 0;
+  }
+}
+
+@keyframes rtFade {
+  0%, 82% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .rt-grid.two,
+  .rt-grid.three,
+  .rt-form-row,
+  .rt-form-row.two,
+  .rt-doodle-tools,
+  .rt-stat-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .rt-mood-buttons,
+  .rt-quiz-options,
+  .rt-list-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .rt-stat strong {
+    font-size: 22px;
+  }
+}
