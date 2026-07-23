@@ -553,8 +553,8 @@
       "study-noise": () => setStudyNoise(target.dataset.noise || "off"),
       "emotion-select": () => selectEmotion(target.dataset.emotion),
       "emotion-save": saveEmotionSpectrum,
-      "preference-edit": () => openPreferenceEditor(target.dataset.field),
-      "preference-editor-save": () => savePreferenceField(target.dataset.field),
+      "preference-edit": () => openPreferenceEditor(target.dataset.field, target.dataset.role),
+      "preference-editor-save": () => savePreferenceField(target.dataset.field, target.dataset.role),
       "preference-editor-close": closePreferenceEditor,
       "preference-save": savePreferenceBook,
       "reconcile-add": addReconciliation,
@@ -1202,9 +1202,26 @@
     }
 
     if (op.type === "preference.update") {
+      const roleId = normalizePreferenceRole(payload.roleId || actorId);
+      const book = normalizePreferenceBook(realtime.preferenceBook);
+      const roleBook = {
+        ...defaultPreferenceEntry(),
+        ...(book.byRole[roleId] || {})
+      };
+      const patch = payload.patch && typeof payload.patch === "object" ? payload.patch : {};
+      preferenceFields.forEach(([key]) => {
+        if (Object.prototype.hasOwnProperty.call(patch, key)) {
+          roleBook[key] = String(patch[key] || "").slice(0, 3000);
+        }
+      });
+      book.byRole[roleId] = {
+        ...roleBook,
+        updatedAt: at,
+        updatedBy: actorName,
+        updatedById: actorId
+      };
       realtime.preferenceBook = {
-        ...realtime.preferenceBook,
-        ...payload.patch,
+        ...book,
         updatedAt: at,
         updatedBy: actorName,
         updatedById: actorId
@@ -2169,39 +2186,60 @@
 
   // [新增] 偏爱记录本：共享文档式编辑，保存后双端同步。
   function renderPreferenceBook() {
-    const book = app.realtime.preferenceBook || {};
+    const book = normalizePreferenceBook(app.realtime.preferenceBook || {});
+    const myRole = normalizePreferenceRole(app.user && app.user.id);
+    const babyRole = otherRoleId(myRole);
     return `
       <div class="panel rt-stack rt-section">
         <div class="rt-card-title">
           <h3>偏爱记录本</h3>
-          <span>共享文档</span>
+          <span>分账号记录</span>
         </div>
-        <div class="rt-grid two rt-preference-grid">
-          ${preferenceFields.map(([key, label]) => {
-            const text = String(book[key] || "").trim();
-            return `
-              <div class="rt-item rt-preference-card">
-                <div class="rt-card-title">
-                  <h4>${esc(label)}</h4>
-                  <button class="ghost" data-rt="preference-edit" data-field="${esc(key)}">${safeIcon("edit")}编辑</button>
-                </div>
-                <p class="rt-preference-text ${text ? "" : "empty"}">${text ? esc(text) : `还没有记录，点编辑写下${esc(roleLabel(otherRoleId()))}的小细节。`}</p>
-              </div>
-            `;
-          }).join("")}
-        </div>
+        ${renderPreferenceOwner(book, myRole, true)}
+        ${renderPreferenceOwner(book, babyRole, false)}
         <p class="small-note">${book.updatedById ? `上次由 ${esc(displayActor(book.updatedById, book.updatedBy))} 更新` : "还没有保存过偏爱记录。"}</p>
       </div>
     `;
   }
 
+  function renderPreferenceOwner(book, roleId, editable) {
+    const roleBook = preferenceEntryForRole(book, roleId);
+    const title = roleId === (app.user && app.user.id) ? "我的偏爱" : `${roleLabel(roleId)}的偏爱`;
+    const meta = roleBook.updatedAt ? `${displayActor(roleBook.updatedById, roleBook.updatedBy)} 更新` : "待填写";
+    return `
+      <div class="rt-preference-owner ${editable ? "mine" : "other"}">
+        <div class="rt-card-title">
+          <h4>${esc(title)}</h4>
+          <span>${esc(meta)}</span>
+        </div>
+        <div class="rt-grid two rt-preference-grid">
+          ${preferenceFields.map(([key, label]) => {
+            const text = String(roleBook[key] || "").trim();
+            return `
+              <div class="rt-item rt-preference-card">
+                <div class="rt-card-title">
+                  <h5>${esc(label)}</h5>
+                  ${editable ? `<button class="ghost" data-rt="preference-edit" data-role="${esc(roleId)}" data-field="${esc(key)}">${safeIcon("edit")}编辑</button>` : `<span class="rt-badge">${esc(roleLabel(roleId))}</span>`}
+                </div>
+                <p class="rt-preference-text ${text ? "" : "empty"}">${text ? esc(text) : "还没有记录。"}</p>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </div>
+    `;
+  }
+
   // [UI改动区域] 手机端长文本使用固定编辑层，避开 iOS Safari/PWA 键盘导致整页回弹。
-  function openPreferenceEditor(field) {
+  function openPreferenceEditor(field, roleId) {
     const entry = preferenceFields.find(([key]) => key === field);
     if (!entry) return toast("没有找到这个记录栏目。");
+    const targetRole = normalizePreferenceRole(roleId || app.user && app.user.id);
+    if (targetRole !== (app.user && app.user.id)) return toast("只能编辑自己的偏爱记录。");
 
     const [key, label] = entry;
-    const book = app.realtime.preferenceBook || {};
+    const book = normalizePreferenceBook(app.realtime.preferenceBook || {});
+    const roleBook = preferenceEntryForRole(book, targetRole);
     closePreferenceEditor(false);
 
     const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
@@ -2217,15 +2255,15 @@
       <div class="rt-preference-editor-panel">
         <div class="rt-preference-editor-head">
           <div>
-            <small>偏爱记录本</small>
+            <small>${esc(possessiveRoleLabel(targetRole))}偏爱</small>
             <h3>${esc(label)}</h3>
           </div>
           <button class="ghost" data-rt="preference-editor-close">取消</button>
         </div>
-        <textarea id="rtPreferenceEditorText" data-field="${esc(key)}" placeholder="记录${esc(roleLabel(otherRoleId()))}需要被记住的小细节">${esc(book[key] || "")}</textarea>
+        <textarea id="rtPreferenceEditorText" data-role="${esc(targetRole)}" data-field="${esc(key)}" placeholder="写下${esc(possessiveRoleLabel(targetRole))}${esc(label)}">${esc(roleBook[key] || "")}</textarea>
         <div class="rt-preference-editor-footer">
           <button class="ghost" data-rt="preference-editor-close">取消</button>
-          <button class="primary" data-rt="preference-editor-save" data-field="${esc(key)}">${safeIcon("save")}保存</button>
+          <button class="primary" data-rt="preference-editor-save" data-role="${esc(targetRole)}" data-field="${esc(key)}">${safeIcon("save")}保存</button>
         </div>
       </div>
     `;
@@ -2245,14 +2283,16 @@
     }, 80);
   }
 
-  function savePreferenceField(field) {
+  function savePreferenceField(field, roleId) {
     const entry = preferenceFields.find(([key]) => key === field);
     const textarea = document.getElementById("rtPreferenceEditorText");
     if (!entry || !textarea) return closePreferenceEditor();
+    const targetRole = normalizePreferenceRole(roleId || textarea.dataset.role || app.user && app.user.id);
+    if (targetRole !== (app.user && app.user.id)) return toast("只能编辑自己的偏爱记录。");
 
     const patch = { [entry[0]]: textarea.value.trim() };
     closePreferenceEditor();
-    sendOperation("preference.update", { patch });
+    sendOperation("preference.update", { roleId: targetRole, patch });
     toast("偏爱记录已保存。");
   }
 
@@ -3594,10 +3634,15 @@
 
   function savePreferenceBook() {
     const patch = {};
+    let hasLegacyTextareas = false;
     preferenceFields.forEach(([key]) => {
-      patch[key] = valueOf(`rtPref-${key}`).trim();
+      const node = document.getElementById(`rtPref-${key}`);
+      if (!node) return;
+      hasLegacyTextareas = true;
+      patch[key] = node.value.trim();
     });
-    sendOperation("preference.update", { patch });
+    if (!hasLegacyTextareas) return;
+    sendOperation("preference.update", { roleId: app.user && app.user.id, patch });
   }
 
   function addReconciliation() {
@@ -3781,7 +3826,7 @@
       "study.timer": "更新了自习房计时",
       "study.quiet": "切换了安静模式",
       "emotionSpectrum.check": "记录了情绪光谱",
-      "preference.update": "更新了偏爱记录本",
+      "preference.update": "更新了自己的偏爱记录",
       "reconciliation.add": "登记了和解契约",
       "reconciliation.ack": "确认了和解契约",
       "auction.bid": "在默契拍卖场出价",
@@ -3832,7 +3877,8 @@
       "capsule-entry": "写时间胶囊",
       "study-start": "云陪伴自习",
       "emotion-save": "记录情绪",
-      "preference-save": "编辑偏爱记录",
+      "preference-edit": "编辑自己的偏爱记录",
+      "preference-save": "编辑自己的偏爱记录",
       "auction-bid": "默契拍卖",
       "fate-answer": "命运选择",
       "blindbox-draw": "抽每日盲盒",
@@ -4555,7 +4601,7 @@
       capsules: [],
       study: defaultStudyState(),
       emotionCalendar: {},
-      preferenceBook: { likes: "", avoid: "", triggers: "", comfort: "", updatedAt: "" },
+      preferenceBook: defaultPreferenceBook(),
       reconciliations: [],
       auction: defaultAuctionState(),
       fate: defaultFateState(),
@@ -4576,7 +4622,76 @@
   }
 
   function normalizeRealtime(input) {
-    return deepMerge(defaultRealtimeState(), input || {});
+    const realtime = deepMerge(defaultRealtimeState(), input || {});
+    realtime.preferenceBook = normalizePreferenceBook(realtime.preferenceBook);
+    return realtime;
+  }
+
+  function defaultPreferenceEntry() {
+    return {
+      likes: "",
+      avoid: "",
+      triggers: "",
+      comfort: "",
+      updatedAt: "",
+      updatedBy: "",
+      updatedById: ""
+    };
+  }
+
+  function defaultPreferenceBook() {
+    return {
+      byRole: {
+        A: defaultPreferenceEntry(),
+        B: defaultPreferenceEntry()
+      },
+      updatedAt: "",
+      updatedBy: "",
+      updatedById: ""
+    };
+  }
+
+  function normalizePreferenceBook(input) {
+    const source = input && typeof input === "object" ? input : {};
+    const book = deepMerge(defaultPreferenceBook(), source);
+
+    ROLE_IDS.forEach((roleId) => {
+      book.byRole[roleId] = deepMerge(defaultPreferenceEntry(), book.byRole && book.byRole[roleId] || {});
+      preferenceFields.forEach(([key]) => {
+        book.byRole[roleId][key] = String(book.byRole[roleId][key] || "").slice(0, 3000);
+      });
+    });
+
+    // 兼容旧版公共记录：已有内容放到最后更新人的栏目里，避免上线升级后丢失。
+    const legacyOwner = normalizePreferenceRole(source.updatedById || "A");
+    const legacyTarget = book.byRole[legacyOwner];
+    let migratedLegacy = false;
+    preferenceFields.forEach(([key]) => {
+      const legacyValue = String(source[key] || "").trim();
+      if (legacyValue && !String(legacyTarget[key] || "").trim()) {
+        legacyTarget[key] = legacyValue.slice(0, 3000);
+        migratedLegacy = true;
+      }
+    });
+    if (migratedLegacy) {
+      legacyTarget.updatedAt ||= source.updatedAt || "";
+      legacyTarget.updatedBy ||= source.updatedBy || "";
+      legacyTarget.updatedById ||= legacyOwner;
+    }
+
+    book.updatedAt = String(book.updatedAt || "");
+    book.updatedBy = String(book.updatedBy || "");
+    book.updatedById = ROLE_IDS.includes(book.updatedById) ? book.updatedById : "";
+    return book;
+  }
+
+  function preferenceEntryForRole(book, roleId) {
+    const normalized = normalizePreferenceBook(book || {});
+    return normalized.byRole[normalizePreferenceRole(roleId)];
+  }
+
+  function normalizePreferenceRole(roleId) {
+    return ROLE_IDS.includes(roleId) ? roleId : app.user && app.user.id || "A";
   }
 
   function deepMerge(target, source) {

@@ -15,6 +15,8 @@ const AUTH_SECRET = readEnv("AUTH_SECRET", "dev-secret-change-me");
 const HEARTBEAT_INTERVAL = 30000;
 const MAX_BODY = 2 * 1024 * 1024;
 const MAX_WS_PAYLOAD = 100 * 1024 * 1024;
+const ROLE_IDS = ["A", "B"];
+const PREFERENCE_FIELD_KEYS = ["likes", "avoid", "triggers", "comfort"];
 const CORS_BASE_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
@@ -349,6 +351,8 @@ function saveState() {
 }
 
 function mergeServerState(input) {
+  const realtime = deepMerge(defaultRealtimeState(), input.realtime || {});
+  realtime.preferenceBook = normalizePreferenceBook(realtime.preferenceBook);
   const defaults = {
     schema: 2,
     revision: 0,
@@ -362,7 +366,7 @@ function mergeServerState(input) {
   return {
     ...defaults,
     ...input,
-    realtime: deepMerge(defaultRealtimeState(), input.realtime || {}),
+    realtime,
     history: Array.isArray(input.history) ? input.history.slice(-200) : []
   };
 }
@@ -447,13 +451,7 @@ function defaultRealtimeState() {
       updatedAt: ""
     },
     emotionCalendar: {},
-    preferenceBook: {
-      likes: "",
-      avoid: "",
-      triggers: "",
-      comfort: "",
-      updatedAt: ""
-    },
+    preferenceBook: defaultPreferenceBook(),
     reconciliations: [],
     auction: defaultAuctionState(),
     fate: {
@@ -514,6 +512,64 @@ function deepMerge(target, source) {
     }
   }
   return output;
+}
+
+function defaultPreferenceEntry() {
+  return {
+    likes: "",
+    avoid: "",
+    triggers: "",
+    comfort: "",
+    updatedAt: "",
+    updatedBy: "",
+    updatedById: ""
+  };
+}
+
+function defaultPreferenceBook() {
+  return {
+    byRole: {
+      A: defaultPreferenceEntry(),
+      B: defaultPreferenceEntry()
+    },
+    updatedAt: "",
+    updatedBy: "",
+    updatedById: ""
+  };
+}
+
+function normalizePreferenceBook(input) {
+  const source = input && typeof input === "object" ? input : {};
+  const book = deepMerge(defaultPreferenceBook(), source);
+
+  ROLE_IDS.forEach((roleId) => {
+    book.byRole[roleId] = deepMerge(defaultPreferenceEntry(), book.byRole && book.byRole[roleId] || {});
+    PREFERENCE_FIELD_KEYS.forEach((key) => {
+      book.byRole[roleId][key] = String(book.byRole[roleId][key] || "").slice(0, 3000);
+    });
+  });
+
+  // 兼容旧版公共偏爱记录：迁移到最后更新人的角色栏，避免既有内容丢失。
+  const legacyOwner = normalizeRoleId(source.updatedById, "A");
+  const legacyTarget = book.byRole[legacyOwner];
+  let migratedLegacy = false;
+  PREFERENCE_FIELD_KEYS.forEach((key) => {
+    const legacyValue = String(source[key] || "").trim();
+    if (legacyValue && !String(legacyTarget[key] || "").trim()) {
+      legacyTarget[key] = legacyValue.slice(0, 3000);
+      migratedLegacy = true;
+    }
+  });
+  if (migratedLegacy) {
+    legacyTarget.updatedAt ||= source.updatedAt || "";
+    legacyTarget.updatedBy ||= source.updatedBy || "";
+    legacyTarget.updatedById ||= legacyOwner;
+  }
+
+  book.updatedAt = String(book.updatedAt || "");
+  book.updatedBy = String(book.updatedBy || "");
+  book.updatedById = ROLE_IDS.includes(book.updatedById) ? book.updatedById : "";
+  return book;
 }
 
 function normalizeOperation(op, user) {
@@ -800,18 +856,33 @@ function applyOperation(op) {
       break;
     }
 
-    case "preference.update":
+    case "preference.update": {
+      const roleId = op.actor.id;
+      const patch = op.payload.patch && typeof op.payload.patch === "object" ? op.payload.patch : {};
+      const book = normalizePreferenceBook(realtime.preferenceBook);
+      const roleBook = {
+        ...defaultPreferenceEntry(),
+        ...(book.byRole[roleId] || {})
+      };
+      PREFERENCE_FIELD_KEYS.forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(patch, key)) {
+          roleBook[key] = String(patch[key] || "").slice(0, 3000);
+        }
+      });
+      book.byRole[roleId] = {
+        ...roleBook,
+        updatedAt: at,
+        updatedBy: op.actor.name,
+        updatedById: op.actor.id
+      };
       realtime.preferenceBook = {
-        ...realtime.preferenceBook,
-        likes: String(op.payload.patch?.likes || "").slice(0, 3000),
-        avoid: String(op.payload.patch?.avoid || "").slice(0, 3000),
-        triggers: String(op.payload.patch?.triggers || "").slice(0, 3000),
-        comfort: String(op.payload.patch?.comfort || "").slice(0, 3000),
+        ...book,
         updatedAt: at,
         updatedBy: op.actor.name,
         updatedById: op.actor.id
       };
       break;
+    }
 
     case "reconciliation.add":
       realtime.reconciliations.unshift(withActor({

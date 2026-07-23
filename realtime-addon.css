@@ -121,6 +121,19 @@ html.rt-theme-night .rt-item {
   background: rgba(255, 255, 255, 0.06);
 }
 
+html.rt-theme-night .rt-preference-owner {
+  border-color: rgba(247, 237, 243, 0.28);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+html.rt-theme-night .rt-preference-owner.mine {
+  background: rgba(255, 143, 171, 0.10);
+}
+
+html.rt-theme-night .rt-preference-owner.other {
+  background: rgba(141, 200, 244, 0.10);
+}
+
 .rt-item.done {
   opacity: 0.7;
 }
@@ -134,8 +147,31 @@ html.rt-theme-night .rt-item {
   align-content: start;
 }
 
+.rt-preference-owner {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 2px dashed rgba(47, 37, 43, 0.18);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.rt-preference-owner.mine {
+  background: rgba(255, 240, 246, 0.46);
+}
+
+.rt-preference-owner.other {
+  background: rgba(235, 248, 255, 0.46);
+}
+
 .rt-preference-card .rt-card-title {
   margin-bottom: 0;
+}
+
+.rt-preference-card h5 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.25;
 }
 
 .rt-preference-card button {
