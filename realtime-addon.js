@@ -40,6 +40,8 @@
     identityTextOriginals: new WeakMap(),
     inputGuardInstalled: false,
     pendingRenderAfterEdit: false,
+    lastScrollActivityAt: 0,
+    preferenceEditorScrollY: 0,
     gameFlash: "",
     gameFlashTimer: null,
     musicEventGuardUntil: 0,
@@ -551,6 +553,9 @@
       "study-noise": () => setStudyNoise(target.dataset.noise || "off"),
       "emotion-select": () => selectEmotion(target.dataset.emotion),
       "emotion-save": saveEmotionSpectrum,
+      "preference-edit": () => openPreferenceEditor(target.dataset.field),
+      "preference-editor-save": () => savePreferenceField(target.dataset.field),
+      "preference-editor-close": closePreferenceEditor,
       "preference-save": savePreferenceBook,
       "reconcile-add": addReconciliation,
       "reconcile-ack": () => acknowledgeReconciliation(target.dataset.id),
@@ -1511,20 +1516,27 @@
 
   function deferRender() {
     clearTimeout(app.renderTimer);
-    if (isFormEditing()) {
+    if (shouldDelayRender()) {
       app.pendingRenderAfterEdit = true;
+      app.renderTimer = setTimeout(() => renderWhenIdle(), 520);
       return;
     }
     app.renderTimer = setTimeout(() => renderWhenIdle(), 60);
   }
 
   function renderWhenIdle() {
-    if (isFormEditing()) {
+    if (shouldDelayRender()) {
       app.pendingRenderAfterEdit = true;
+      clearTimeout(app.renderTimer);
+      app.renderTimer = setTimeout(() => renderWhenIdle(), 520);
       return;
     }
     app.pendingRenderAfterEdit = false;
     renderAddon();
+  }
+
+  function shouldDelayRender() {
+    return isFormEditing() || isUserScrolling() || document.documentElement.classList.contains("rt-preference-editor-open");
   }
 
   function isFormEditing() {
@@ -1533,6 +1545,10 @@
     if (!active.matches("input, textarea, select")) return false;
     const type = String(active.type || "").toLowerCase();
     return !["button", "submit", "reset", "checkbox", "radio", "file", "range", "color"].includes(type);
+  }
+
+  function isUserScrolling() {
+    return Date.now() - app.lastScrollActivityAt < 520;
   }
 
   function renderHomeAddon() {
@@ -2160,15 +2176,118 @@
           <h3>偏爱记录本</h3>
           <span>共享文档</span>
         </div>
-        <div class="rt-grid two">
-          ${preferenceFields.map(([key, label]) => `
-            <label>${label}<textarea id="rtPref-${key}" placeholder="记录${esc(roleLabel(otherRoleId()))}需要被记住的小细节">${esc(book[key] || "")}</textarea></label>
-          `).join("")}
+        <div class="rt-grid two rt-preference-grid">
+          ${preferenceFields.map(([key, label]) => {
+            const text = String(book[key] || "").trim();
+            return `
+              <div class="rt-item rt-preference-card">
+                <div class="rt-card-title">
+                  <h4>${esc(label)}</h4>
+                  <button class="ghost" data-rt="preference-edit" data-field="${esc(key)}">${safeIcon("edit")}编辑</button>
+                </div>
+                <p class="rt-preference-text ${text ? "" : "empty"}">${text ? esc(text) : `还没有记录，点编辑写下${esc(roleLabel(otherRoleId()))}的小细节。`}</p>
+              </div>
+            `;
+          }).join("")}
         </div>
-        <button class="primary" data-rt="preference-save">${safeIcon("save")}保存偏爱记录</button>
         <p class="small-note">${book.updatedById ? `上次由 ${esc(displayActor(book.updatedById, book.updatedBy))} 更新` : "还没有保存过偏爱记录。"}</p>
       </div>
     `;
+  }
+
+  // [UI改动区域] 手机端长文本使用固定编辑层，避开 iOS Safari/PWA 键盘导致整页回弹。
+  function openPreferenceEditor(field) {
+    const entry = preferenceFields.find(([key]) => key === field);
+    if (!entry) return toast("没有找到这个记录栏目。");
+
+    const [key, label] = entry;
+    const book = app.realtime.preferenceBook || {};
+    closePreferenceEditor(false);
+
+    const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+    app.preferenceEditorScrollY = scrollY;
+    lockBodyScroll(scrollY);
+
+    const layer = document.createElement("div");
+    layer.id = "rtPreferenceEditorLayer";
+    layer.className = "rt-preference-editor-layer";
+    layer.setAttribute("role", "dialog");
+    layer.setAttribute("aria-modal", "true");
+    layer.innerHTML = `
+      <div class="rt-preference-editor-panel">
+        <div class="rt-preference-editor-head">
+          <div>
+            <small>偏爱记录本</small>
+            <h3>${esc(label)}</h3>
+          </div>
+          <button class="ghost" data-rt="preference-editor-close">取消</button>
+        </div>
+        <textarea id="rtPreferenceEditorText" data-field="${esc(key)}" placeholder="记录${esc(roleLabel(otherRoleId()))}需要被记住的小细节">${esc(book[key] || "")}</textarea>
+        <div class="rt-preference-editor-footer">
+          <button class="ghost" data-rt="preference-editor-close">取消</button>
+          <button class="primary" data-rt="preference-editor-save" data-field="${esc(key)}">${safeIcon("save")}保存</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(layer);
+
+    const textarea = document.getElementById("rtPreferenceEditorText");
+    setTimeout(() => {
+      try {
+        textarea?.focus({ preventScroll: true });
+      } catch (error) {
+        textarea?.focus();
+      }
+      try {
+        const length = textarea?.value.length || 0;
+        textarea?.setSelectionRange(length, length);
+      } catch (error) {}
+    }, 80);
+  }
+
+  function savePreferenceField(field) {
+    const entry = preferenceFields.find(([key]) => key === field);
+    const textarea = document.getElementById("rtPreferenceEditorText");
+    if (!entry || !textarea) return closePreferenceEditor();
+
+    const patch = { [entry[0]]: textarea.value.trim() };
+    closePreferenceEditor();
+    sendOperation("preference.update", { patch });
+    toast("偏爱记录已保存。");
+  }
+
+  function closePreferenceEditor(restoreScroll = true) {
+    document.getElementById("rtPreferenceEditorLayer")?.remove();
+    unlockBodyScroll(restoreScroll);
+    if (app.pendingRenderAfterEdit) {
+      clearTimeout(app.renderTimer);
+      app.renderTimer = setTimeout(() => renderWhenIdle(), 80);
+    }
+  }
+
+  function lockBodyScroll(scrollY) {
+    document.documentElement.classList.add("rt-preference-editor-open");
+    document.body.dataset.rtScrollLockY = String(scrollY);
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
+  }
+
+  function unlockBodyScroll(restoreScroll = true) {
+    const locked = document.documentElement.classList.contains("rt-preference-editor-open");
+    const scrollY = Number(document.body.dataset.rtScrollLockY || app.preferenceEditorScrollY || 0);
+    document.documentElement.classList.remove("rt-preference-editor-open");
+    delete document.body.dataset.rtScrollLockY;
+    document.body.style.position = "";
+    document.body.style.top = "";
+    document.body.style.left = "";
+    document.body.style.right = "";
+    document.body.style.width = "";
+    if (locked && restoreScroll !== false) {
+      requestAnimationFrame(() => window.scrollTo(0, scrollY));
+    }
   }
 
   // [新增] 和解契约：未完成时锁定娱乐游戏，推动先修复关系。
@@ -4163,6 +4282,14 @@
     if (app.inputGuardInstalled) return;
     app.inputGuardInstalled = true;
     document.documentElement.classList.add("rt-ios-guard");
+
+    const markScrollActivity = () => {
+      app.lastScrollActivityAt = Date.now();
+    };
+    window.addEventListener("scroll", markScrollActivity, { passive: true });
+    document.addEventListener("touchstart", markScrollActivity, { passive: true });
+    document.addEventListener("touchmove", markScrollActivity, { passive: true });
+    document.addEventListener("wheel", markScrollActivity, { passive: true });
 
     document.addEventListener("focusin", (event) => {
       if (!event.target.matches("input, textarea, select")) return;
