@@ -1,28 +1,30 @@
-# Railway Deployment
+# 情侣实时同步网站 Railway 版
 
-## Files
-- `server.js`: Node.js entry file
-- `index.html`: frontend page
-- `realtime-addon.css`: realtime feature styles
-- `realtime-addon.js`: frontend realtime logic and mobile reconnect logic
-- `package.json`: npm dependencies and start script
-- `.env.example`: local environment variable example
+## 项目文件
+- `server.js`：Node.js 后端入口，启动命令固定为 `node server.js`
+- `index.html`：保留原页面和全部原有功能
+- `realtime-addon.js`：A/B 登录、动态人称、WebSocket 双向同步、离线队列、新增互动模块
+- `realtime-addon.css`：卡通小狗手绘风 UI、暗夜/马卡龙主题、移动端和 iOS/PWA 适配
+- `package.json`：Railway 构建依赖与 `start` 脚本
+- `.env.example` / `env.example`：本地变量示例，部署时读取平台环境变量
 
-## Start Command
-
-```bash
-node server.js
-```
-
-Railway can also use the npm start script:
+## Railway 启动
+Railway 会读取 `package.json`：
 
 ```bash
 npm start
 ```
 
-## Required Railway Variables
+实际执行：
 
-Set exactly these variables in Railway:
+```bash
+node server.js
+```
+
+服务监听 `0.0.0.0`，端口读取 Railway 动态注入的 `PORT`。
+
+## 必填环境变量
+在 Railway 服务的 Variables 中填写：
 
 ```text
 PORT
@@ -35,34 +37,26 @@ COUPLE_B_PASSWORD
 COUPLE_B_NAME
 ```
 
-## Deploy
-1. Push this folder to GitHub.
-2. Railway -> `New Project` -> `Deploy from GitHub repo`.
-3. Select the repository.
-4. Add the required variables above.
-5. Deploy and open the public Railway URL on mobile.
+示例：
 
-## Added / Modified Areas
-- `realtime-addon.js`
-  - Added dynamic identity rendering: account A sees A as `我` and B as `宝宝`; account B sees B as `我` and A as `宝宝`.
-  - Expanded the quiz and truth-or-dare banks into `日常温柔`, `甜蜜暧昧`, and `趣味整活`.
-  - Added synced truth-or-dare, date wheel, fortune draw, and long-distance pulse relay.
-  - Wrapped existing dice/wheel games with lightweight feedback while preserving original behavior.
-- `server.js`
-  - Added Railway-safe persisted state fields for the new synced games.
-  - Added WebSocket operation handlers for the new synced game actions.
-- `realtime-addon.css`
-  - Added responsive mobile styles and animation feedback for the new game widgets.
+```text
+AUTH_SECRET=please-change-to-a-long-random-secret
+COUPLE_A_USERNAME=A
+COUPLE_A_PASSWORD=a5201314
+COUPLE_A_NAME=角色A
+COUPLE_B_USERNAME=B
+COUPLE_B_PASSWORD=b5201314
+COUPLE_B_NAME=角色B
+```
 
-## Added / Modified Areas In v2.3.0
-- `realtime-addon.js`
-  - [新增] 延时信笺、限时悄悄话、共享时间胶囊、云陪伴自习房间、偏爱记录本、情绪光谱日历、和解契约、引力值、相遇轨迹地图、回忆抽签机、共同成长目标。
-  - [新增] 默契拍卖场、命运选择题，并接入和解契约锁定逻辑。
-  - [新增] 相册分类增强视图，保留原相册与 JSON 导入导出。
-  - [修改] 双主题改为 A/B 账号独立云端保存。
-- `server.js`
-  - [新增] 第二批模块的持久化字段与 WebSocket 操作处理。
-  - [新增] 延时信笺、时间胶囊、限时悄悄话的服务端可见性过滤。
-  - [新增] 引力值奖励与和解契约游戏锁定校验。
-- `realtime-addon.css`
-  - [新增] 新模块移动端布局、暗夜主题适配、引力值特效、轨迹地图动画。
+## 本次新增/修改标注
+- `[删除冗余模块]`：五大板块收拢、旧相册入口隐藏、老工具/老游戏/老设置折叠保留。
+- `[UI改动区域]`：小狗手绘卡片、黑色描边、马卡龙/暗夜主题、手机输入稳定和设置中心教程。
+- `[新增功能代码]`：延时信笺、时间胶囊、云自习、偏爱记录、情绪日历、和解契约、拍卖场、命运选择题、一次性悄悄话、引力值、相遇地图、回忆抽签、成长目标等。
+
+## 最简部署步骤
+1. 把整个项目文件夹推送到 GitHub。
+2. Railway 新建项目，选择该 GitHub 仓库。
+3. Variables 按上方清单填写 8 个变量。
+4. Start Command 使用 `npm start` 或 `node server.js`。
+5. 部署完成后，打开 Railway 生成的公网域名，两台手机访问同一网址登录 A/B 账号即可实时同步。

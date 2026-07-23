@@ -13,6 +13,8 @@
     shouldReconnect: false,
     reconnectTimer: null,
     reconnectAttempt: 0,
+    heartbeatTimer: null,
+    lastPongAt: 0,
     socketSerial: 0,
     applyingRemote: false,
     legacyTimer: null,
@@ -36,6 +38,7 @@
     snapshotRevision: 0,
     originalPersistNow: null,
     identityTextOriginals: new WeakMap(),
+    inputGuardInstalled: false,
     gameFlash: "",
     gameFlashTimer: null
   };
@@ -208,6 +211,133 @@
     { id: "fate-6", text: "共同生活里更想优先拥有？", options: ["稳定仪式感", "新鲜小冒险"] }
   ];
 
+  // [新增功能代码] 题库与工具配置扩容：只补充素材和轻量状态，不改动原小游戏底层逻辑。
+  const extraTruthDareDecks = {
+    daily: {
+      truth: [
+        "这周哪一件小事最想被我记住？",
+        "什么时候你会觉得我们特别像一个小队？",
+        "最近一次被照顾到的瞬间是什么？",
+        "如果要给今天的我们取一个标题，会叫什么？",
+        "你最希望我下次主动问你什么？",
+        "哪种陪伴最能让你快速放松下来？",
+        "有什么习惯是你希望我们一起养成的？",
+        "最近哪句话让你觉得心里很稳？",
+        "如果今晚只做一件温柔的事，你想做什么？",
+        "你觉得我们最近最值得肯定的地方是什么？",
+        "遇到忙碌的一天，你最想收到什么样的消息？",
+        "有没有一件小事，是你想和我一起慢慢坚持的？"
+      ],
+      dare: [
+        "给宝宝写一句不超过 20 字的今日小情书。",
+        "把今天最可爱的一分钟描述给宝宝听。",
+        "选一个明天要互相提醒的小目标。",
+        "给宝宝安排一个五分钟休息仪式。",
+        "发一张今天身边最温柔颜色的照片。",
+        "说出一个你们最近的小进步。",
+        "给今晚的聊天定一个可爱主题。",
+        "把一个感谢写进偏爱记录本。",
+        "为宝宝抽一个每日盲盒任务。",
+        "给云约会预约里加一个轻松选项。"
+      ]
+    },
+    sweet: {
+      truth: [
+        "你最喜欢被宝宝怎样偏爱？",
+        "哪一个瞬间会突然很想抱抱？",
+        "下次见面最想听到宝宝说哪句话？",
+        "如果把心动做成天气，今天是什么天气？",
+        "最想和宝宝一起完成哪种小仪式？",
+        "哪一个称呼会让你偷偷开心？",
+        "最想把哪段聊天截图珍藏起来？",
+        "你最喜欢宝宝撒娇还是认真？",
+        "如果今天可以穿越到一次见面，你想回到哪一天？",
+        "最想收到哪种没有预告的惊喜？",
+        "你觉得我们的专属暗号应该是什么感觉？",
+        "最近有没有一刻想说：就是这个人了？"
+      ],
+      dare: [
+        "发送一条只夸宝宝优点的三连夸。",
+        "用一句话预告下次见面的第一个动作。",
+        "给宝宝写一个今晚限定昵称。",
+        "把一句情话放进延时信笺。",
+        "发起一次 30 秒远程拥抱倒计时。",
+        "用三个形容词描述宝宝今天在你心里的样子。",
+        "给宝宝准备一个云约会开场白。",
+        "写下一个想一起解锁的约会场景。",
+        "给宝宝发一条不讲道理但很真诚的想念。",
+        "给恋爱小树浇水并说一句成长宣言。"
+      ]
+    },
+    fun: {
+      truth: [
+        "如果宝宝是一个综艺角色，最像哪种担当？",
+        "谁更可能出门五分钟后又回来拿东西？",
+        "如果你们开一档节目，节目名叫什么？",
+        "谁更像旅行中的气氛组？",
+        "你们的爱情如果是一道菜，会是什么口味？",
+        "谁更可能为了零食改变路线？",
+        "如果把宝宝做成表情包，配字会是什么？",
+        "谁更会在购物车里偷偷加奇怪东西？",
+        "如果今天互换手机壳风格，会发生什么？",
+        "哪件小事最像你们的专属梗？",
+        "如果吵架必须用歌名表达，你会选哪首？",
+        "谁更适合当恋爱小树的首席园丁？"
+      ],
+      dare: [
+        "用主持人口吻宣布宝宝今日最佳可爱奖。",
+        "发一个三句以内的土味但真诚情话。",
+        "给下一次云约会取一个综艺标题。",
+        "随机挑一个共享清单事项加上夸张备注。",
+        "把今天的心情用拟声词发给宝宝。",
+        "给宝宝颁发一个临时成就徽章名字。",
+        "写一个假想问答的离谱但可爱问题。",
+        "用五个字以内认输撒娇一次。",
+        "把免生气卡片送给宝宝一张。",
+        "给命运选择题补一句赛后感想。"
+      ]
+    }
+  };
+
+  const blindBoxTasks = [
+    "今天互相发一句具体夸奖",
+    "一起整理一条共享清单",
+    "给恋爱小树浇一次水",
+    "把一句想念放进延时信笺",
+    "各自拍一张此刻天空或桌面的照片",
+    "晚上用 5 分钟复盘今天最开心的事",
+    "给下次见面加一个小仪式",
+    "互相推荐一首今天适合听的歌",
+    "一起抽一题真心话",
+    "给偏爱记录本补一个细节"
+  ];
+
+  const hypotheticalQuestions = [
+    { id: "hyp-1", text: "如果今晚能瞬移见面 2 小时，你们会先做什么？", options: ["吃一顿饭", "散步聊天", "安静抱抱"] },
+    { id: "hyp-2", text: "如果明天一起放假，你们会选择？", options: ["宅家慢生活", "城市漫游", "短途旅行"] },
+    { id: "hyp-3", text: "如果只能保留一种约会仪式，你们更想保留？", options: ["饭后散步", "睡前语音", "拍照记录"] },
+    { id: "hyp-4", text: "如果共同养一盆植物，它最应该叫什么？", options: ["小树同学", "心动盆栽", "慢慢长大"] }
+  ];
+
+  const noAngryCardTemplates = [
+    "先暂停 20 分钟，回来抱抱再说",
+    "今天允许笨拙表达，但不许冷暴力",
+    "先喝水，再把感受说完整",
+    "用一次撒娇换一次认真倾听",
+    "把输赢放下，先确认彼此都被爱着"
+  ];
+
+  const badgeCatalog = [
+    { key: "first-mood", label: "心情记录员", test: () => Object.keys(app.realtime.moods || {}).length > 0 },
+    { key: "tree-lv3", label: "小树园丁", test: () => Number(app.realtime.tree?.level || 1) >= 3 },
+    { key: "memory-10", label: "回忆收藏家", test: () => memoryPool().length >= 10 },
+    { key: "study-quiet", label: "安静陪伴者", test: () => Boolean(app.realtime.study?.quietMode) },
+    { key: "gravity-lv2", label: "引力升温", test: () => gravityLevel(app.realtime.gravity?.points || 0) >= 2 },
+    { key: "goals-checked", label: "共同成长中", test: () => countCompletedGoals() > 0 }
+  ];
+
+  extendTruthDareDecks();
+
   boot();
 
   function boot() {
@@ -332,6 +462,7 @@
       const action = target.dataset.rt;
       sendActivity(actionName(action));
 
+      if (action === "jump-tab") jumpToTab(target.dataset.tab);
       if (action === "login") login();
       if (action === "logout") logout();
       if (action === "theme") setTheme(target.dataset.theme);
@@ -374,6 +505,8 @@
       if (action === "quiz-answer") answerQuiz(target.dataset.question, target.dataset.answer);
       if (action === "quiz-reset") resetQuiz();
       if (handleExtendedAction(action, target)) return;
+      if (action === "open-import") document.getElementById("importInput")?.click();
+      if (action === "export-data") document.getElementById("floatingBackup")?.click();
       if (action === "push-now") scheduleLegacySync("手动同步原有功能");
       if (action === "close-account-layer") hideAccountLayer();
     });
@@ -429,7 +562,17 @@
       "goal-check": () => checkGrowthGoal(target.dataset.term, target.dataset.id),
       "goal-delete": () => deleteGrowthGoal(target.dataset.term, target.dataset.id),
       "album-filter": () => { app.albumCategoryFilter = target.dataset.category || "all"; renderAddon(); },
-      "album-set-category": () => setAlbumCategory(Number(target.dataset.index), target.dataset.category || "其他")
+      "album-set-category": () => setAlbumCategory(Number(target.dataset.index), target.dataset.category || "其他"),
+      "question-blacklist-add": () => addQuestionBlacklist(target.dataset.text || ""),
+      "question-blacklist-delete": () => deleteQuestionBlacklist(target.dataset.id || target.dataset.text || ""),
+      "question-blacklist-clear": clearQuestionBlacklist,
+      "blindbox-draw": drawBlindBoxTask,
+      "hyp-reset": resetHypotheticalQuestion,
+      "hyp-answer": () => answerHypotheticalQuestion(target.dataset.answer),
+      "no-angry-create": createNoAngryCard,
+      "no-angry-use": () => useNoAngryCard(target.dataset.id),
+      "cloud-date-add": addCloudDate,
+      "monthly-review-save": saveMonthlyReview
     };
     if (!map[action]) return false;
     map[action]();
@@ -471,6 +614,7 @@
   function logout() {
     app.shouldReconnect = false;
     resetReconnectState();
+    clearSocketHeartbeat();
     saveQueue();
     app.queue = [];
     app.token = "";
@@ -588,7 +732,9 @@
       if (!isCurrentSocket()) return;
       app.connected = true;
       app.connecting = false;
+      app.lastPongAt = Date.now();
       resetReconnectState();
+      startSocketHeartbeat(socket, isCurrentSocket);
       updateConnectionStatus();
       flushQueue();
       sendActivity("在线");
@@ -606,6 +752,7 @@
 
     socket.addEventListener("close", () => {
       if (!isCurrentSocket()) return;
+      clearSocketHeartbeat();
       app.socket = null;
       app.connected = false;
       app.connecting = false;
@@ -615,6 +762,7 @@
 
     socket.addEventListener("error", () => {
       if (!isCurrentSocket()) return;
+      clearSocketHeartbeat();
       app.connected = false;
       app.connecting = false;
       updateConnectionStatus();
@@ -623,6 +771,11 @@
   }
 
   function handleSocketMessage(message) {
+    if (message.type === "pong") {
+      app.lastPongAt = Date.now();
+      return;
+    }
+
     if (message.type === "welcome") {
       app.presence = message.presence || [];
       applySnapshot(message.snapshot || {}, false);
@@ -645,6 +798,28 @@
       }
       applyRemoteOperation(op);
     }
+  }
+
+  // [新增功能代码] 手机浏览器应用层心跳：后台恢复后更快识别断线并触发重连。
+  function startSocketHeartbeat(socket, isCurrentSocket) {
+    clearSocketHeartbeat();
+    app.heartbeatTimer = setInterval(() => {
+      if (!isCurrentSocket() || socket.readyState !== WebSocket.OPEN) return;
+      if (Date.now() - app.lastPongAt > 75000) {
+        try { socket.close(); } catch (error) {}
+        return;
+      }
+      try {
+        socket.send(JSON.stringify({ type: "ping", at: new Date().toISOString() }));
+      } catch (error) {
+        try { socket.close(); } catch (closeError) {}
+      }
+    }, 25000);
+  }
+
+  function clearSocketHeartbeat() {
+    clearInterval(app.heartbeatTimer);
+    app.heartbeatTimer = null;
   }
 
   function applySnapshot(snapshot, forceServerLegacy) {
@@ -1138,6 +1313,82 @@
       realtime.growthGoals[term] = realtime.growthGoals[term].filter((item) => item.id !== payload.id);
     }
 
+    // [新增功能代码] 轻量互动工具同步状态：题目黑名单、每日盲盒、假想问答、免生气卡和月度互评。
+    if (op.type === "question.blacklist.add") {
+      const text = String(payload.text || "").trim();
+      if (text && !(realtime.questionBlacklist || []).some((item) => item.text === text)) {
+        realtime.questionBlacklist.unshift(withActor({ id: payload.id || uuid(), text, createdAt: at }, op, at));
+      }
+      realtime.questionBlacklist = (realtime.questionBlacklist || []).slice(0, 80);
+    }
+
+    if (op.type === "question.blacklist.delete") {
+      realtime.questionBlacklist = (realtime.questionBlacklist || []).filter((item) => item.id !== payload.id && item.text !== payload.text);
+    }
+
+    if (op.type === "question.blacklist.clear") {
+      realtime.questionBlacklist = [];
+    }
+
+    if (op.type === "blindBox.draw") {
+      realtime.blindBox = {
+        date: payload.date || today(),
+        current: withActor({
+          id: payload.item && payload.item.id || uuid(),
+          text: payload.item && payload.item.text || "",
+          done: false
+        }, op, at),
+        recentIds: Array.isArray(payload.recentIds) ? payload.recentIds.slice(-8) : [],
+        updatedAt: at
+      };
+    }
+
+    if (op.type === "hypothetical.reset") {
+      realtime.hypothetical = {
+        current: payload.question || randomHypotheticalQuestion(),
+        answers: {},
+        updatedAt: at,
+        updatedBy: actorName,
+        updatedById: actorId
+      };
+    }
+
+    if (op.type === "hypothetical.answer") {
+      realtime.hypothetical ||= defaultHypotheticalState();
+      realtime.hypothetical.answers ||= {};
+      realtime.hypothetical.answers[actorId] = {
+        answer: payload.answer || "",
+        updatedAt: at,
+        actorName
+      };
+    }
+
+    if (op.type === "noAngryCard.create") {
+      realtime.noAngryCards.unshift(withActor({
+        id: payload.id || uuid(),
+        text: payload.text || "",
+        usedAt: "",
+        createdAt: at
+      }, op, at));
+      realtime.noAngryCards = realtime.noAngryCards.slice(0, 30);
+    }
+
+    if (op.type === "noAngryCard.use") {
+      updateItem(realtime.noAngryCards, payload.id, { usedAt: at, usedById: actorId, usedBy: actorName }, op, at);
+    }
+
+    if (op.type === "monthlyReview.submit") {
+      const month = payload.month || today().slice(0, 7);
+      realtime.monthlyReviews[month] ||= {};
+      realtime.monthlyReviews[month][actorId] = {
+        score: Math.max(1, Math.min(10, Number(payload.score || 10))),
+        text: payload.text || "",
+        actor: actorId,
+        actorName,
+        updatedAt: at
+      };
+    }
+
     // [新增] 趣味互动操作：真心话大冒险、同步约会转盘、甜蜜抽签、心动接力。
     if (op.type === "truthDare.draw") {
       realtime.truthDare = {
@@ -1231,12 +1482,20 @@
 
   function renderAddon() {
     ensureStatusChips();
+    applySimplifiedNavigation();
+    installIOSInputGuards();
     renderHomeAddon();
+    compactLegacyHome();
     renderAlbumAddon();
     renderToolsAddon();
+    compactLegacyBoard("tab-tools", "rtTools", "原趣味工具入口", "保留情话、双城距离和本地小测试；常用双人同步工具请使用上方新版入口。");
     renderGamesAddon();
+    compactLegacyBoard("tab-games", "rtGames", "原小游戏入口", "保留飞行棋和原有小游戏底层玩法；新版同步玩法默认展示在上方。");
     renderSettingsAddon();
+    compactLegacyBoard("tab-settings", "rtSettings", "原访问密码与本地数据", "保留原访问密码修改、本地导入导出和清空数据入口。");
+    relocateUsageGuide();
     updateConnectionStatus();
+    compactStatusStrip();
     setupDoodleCanvas();
     applyTheme(currentTheme());
     applyGravityEffects(app.realtime.gravity);
@@ -1253,16 +1512,34 @@
     const root = ensureMount("tab-home", "rtHome", "rt-section");
     if (!root) return;
 
-    const moods = app.realtime.moods[today()] || {};
-    const myMood = moods[app.user && app.user.id] || null;
+    const legacy = getLegacyState() || {};
     const anniversaryReminders = getAnniversaryReminders();
+    const days = loveDays(legacy.profile && legacy.profile.startDate);
 
+    // [UI改动区域] 主页只保留概览、头像、在线状态和快捷入口，避免重复展示工具模块。
     root.innerHTML = `
-      <section class="section-head">
-        <h2>实时双人互动</h2>
-        <p>在线、思念、心情、小任务和恋爱小树都会同步到${esc(roleLabel(otherRoleId()))}屏幕。</p>
+      <section class="rt-dog-hero" aria-label="主页概览">
+        <div class="rt-dog-copy">
+          <span class="rt-kicker">今天也在同一间小窝</span>
+          <h2>${days ? `相恋第 ${days} 天` : "把今天也认真收好"}</h2>
+          <p>在线状态、近期纪念日和常用入口集中在这里，其余互动都收进下方五大板块。</p>
+          <div class="rt-quick-grid">
+            <button data-rt="jump-tab" data-tab="records">回忆记录库</button>
+            <button data-rt="jump-tab" data-tab="tools">趣味工具&云陪伴</button>
+            <button data-rt="jump-tab" data-tab="games">互动游戏厅</button>
+            <button data-rt="jump-tab" data-tab="settings">设置中心</button>
+          </div>
+        </div>
+        ${renderDogIllustration()}
       </section>
-      <div class="rt-grid two">
+      <div class="rt-grid two rt-section">
+        <div class="panel rt-stack rt-couple-card">
+          <div class="rt-card-title">
+            <h3>双人头像</h3>
+            <span>展开资料编辑可上传</span>
+          </div>
+          ${renderCartoonAvatarCards(legacy.profile || {})}
+        </div>
         <div class="panel rt-stack">
           <div class="rt-card-title">
             <h3>在线状态</h3>
@@ -1271,61 +1548,14 @@
           <div class="rt-presence-list">${renderPresenceRows()}</div>
           <div class="rt-inline">
             <button class="primary" data-rt="miss-you">${safeIcon("play")}发送思念</button>
-            <span class="rt-meta">${esc(roleLabel(otherRoleId()))}会收到全屏爱心提醒</span>
-          </div>
-        </div>
-        <div class="panel rt-stack">
-          <div class="rt-card-title">
-            <h3>今日情绪打卡</h3>
-            <span>${today()}</span>
-          </div>
-          <div class="rt-mood-buttons">
-            ${moodOptions.map((mood) => `<button class="${(myMood && myMood.mood === mood) || app.selectedMood === mood ? "active" : ""}" data-rt="mood-select" data-mood="${esc(mood)}">${esc(mood)}</button>`).join("")}
-          </div>
-          <label>
-            今天想补一句
-            <textarea id="rtMoodNote" placeholder="写给${esc(roleLabel(otherRoleId()))}看的心情小纸条">${esc(myMood && myMood.note || "")}</textarea>
-          </label>
-          <button class="primary" data-rt="mood-save">${safeIcon("save")}保存今日心情</button>
-          <div class="rt-grid two">${renderMoodCards(moods)}</div>
-        </div>
-      </div>
-      <div class="rt-grid two rt-section">
-        <div class="panel rt-stack">
-          <div class="rt-card-title">
-            <h3>甜蜜小任务</h3>
-            <span>${completedTasks()} / ${app.realtime.tasks.length} 已完成</span>
-          </div>
-          <div class="rt-form-row">
-            <label>任务<input id="rtTaskTitle" placeholder="例如：今晚睡前互发一句夸夸"></label>
-            <label>备注<input id="rtTaskDetail" placeholder="可选"></label>
-            <button class="primary" data-rt="task-add">${safeIcon("plus")}发送</button>
-          </div>
-          <div class="rt-stack">${renderSweetTasks()}</div>
-        </div>
-        <div class="panel rt-stack">
-          <div class="rt-card-title">
-            <h3>恋爱小树</h3>
-            <span>Lv.${app.realtime.tree.level}</span>
-          </div>
-          <div class="rt-tree-stage">
-            <div class="rt-tree" style="--tree-size:${Math.min(128, 74 + app.realtime.tree.level * 8)}px">
-              <div class="rt-tree-crown"></div>
-              <div class="rt-tree-trunk"></div>
-              <div class="rt-tree-pot"></div>
-            </div>
-          </div>
-          <div class="progress-track"><div class="progress-fill" style="width:${treeProgress()}%"></div></div>
-          <div class="rt-inline">
-            <button class="primary" data-rt="tree-water">一起浇水</button>
-            <span class="rt-meta">累计 ${app.realtime.tree.totalWater} 滴，上次 ${esc(app.realtime.tree.lastWateredById ? displayActor(app.realtime.tree.lastWateredById, app.realtime.tree.lastWateredBy) : "还没有浇水")}</span>
+            <button class="ghost" data-rt="jump-tab" data-tab="tools">查看想念雷达</button>
           </div>
         </div>
       </div>
       <div class="rt-grid two rt-section">
         <div class="panel rt-stack">
           <div class="rt-card-title">
-            <h3>纪念日提醒</h3>
+            <h3>近期纪念日</h3>
             <span>7 天内</span>
           </div>
           ${anniversaryReminders.length ? anniversaryReminders.map((item) => `
@@ -1343,21 +1573,26 @@
           ${renderStats()}
         </div>
       </div>
-      ${renderDelayedLetters()}
-      ${renderStudyRoom()}
-      ${renderEmotionSpectrum()}
-      ${renderGravityPanel()}
     `;
   }
 
   function renderAlbumAddon() {
-    const root = ensureMount("tab-album", "rtAlbum", "rt-section");
+    // [删除冗余模块] 旧“相册”独立页入口被收拢到“回忆记录库”，保留所有相册/涂鸦/胶囊功能。
+    const root = ensureMount("tab-records", "rtAlbum", "rt-section rt-memory-library");
     if (!root) return;
     root.innerHTML = `
       <section class="section-head">
-        <h2>双人实时涂鸦</h2>
-        <p>两个人画在同一张画布上，保存后会进入原相册。</p>
+        <h2>回忆记录库扩展</h2>
+        <p>日常记录、纪念日和心愿清单沿用原入口；相册分类、涂鸦、时间胶囊和成长目标统一放在这里。</p>
       </section>
+      <div class="rt-memory-map">
+        <span>日常记录</span>
+        <span>纪念日管理</span>
+        <span>心愿清单</span>
+        <span>相册</span>
+        <span>时间胶囊</span>
+        <span>共同成长目标</span>
+      </div>
       <div class="panel rt-doodle-shell">
         <div class="rt-doodle-tools">
           <label>颜色<input id="rtDoodleColor" type="color" value="#ff9fb5"></label>
@@ -1371,67 +1606,44 @@
       ${renderAlbumCategories()}
       ${renderTimeCapsules()}
       ${renderMemoryMachine()}
+      ${renderGrowthGoals()}
     `;
   }
 
   function renderToolsAddon() {
     const root = ensureMount("tab-tools", "rtTools", "rt-section");
     if (!root) return;
+    // [删除冗余模块] 工具页只保留唯一录入入口：任务、清单、和解、偏爱等同类内容不再跨页重复创建。
     root.innerHTML = `
       <section class="section-head">
-        <h2>共同计划和音乐</h2>
-        <p>音乐、旅行、约会、购物和冷静备忘录都支持实时同步。</p>
+        <h2>趣味工具 & 云陪伴</h2>
+        <p>思念、任务、自习、音乐、偏爱、情绪、和解与月度互评都支持实时同步。</p>
       </section>
+      ${renderMissRadar()}
+      ${renderSweetTasksPanel()}
+      ${renderDelayedLetters()}
+      ${renderStudyRoom()}
       <div class="rt-grid two">
-        <div class="panel rt-stack">
-          <div class="rt-card-title">
-            <h3>同步音乐播放器</h3>
-            <span>${esc(app.realtime.music.updatedById ? displayActor(app.realtime.music.updatedById, app.realtime.music.updatedBy) : "等待切歌")}</span>
-          </div>
-          <div class="rt-music-now">${esc(app.realtime.music.title || "还没有选择音乐")}</div>
-          <audio id="rtMusicAudio" class="rt-audio" controls></audio>
-          <div class="rt-form-row">
-            <label>音乐标题<input id="rtMusicTitle" placeholder="歌名或心情"></label>
-            <label>音乐链接<input id="rtMusicUrl" placeholder="https://... 或选择本地音频"></label>
-            <button class="primary" data-rt="music-add">${safeIcon("plus")}加入</button>
-          </div>
-          <label>本地音频
-            <input id="rtMusicFile" type="file" accept="audio/*">
-          </label>
-          <div class="rt-stack">${renderMusicTracks()}</div>
-        </div>
-        <div class="panel rt-stack">
-          <div class="rt-card-title">
-            <h3>共享清单</h3>
-            <span>${esc(listLabels[app.listTab])}</span>
-          </div>
-          <div class="rt-list-tabs">
-            ${Object.entries(listLabels).map(([key, label]) => `<button class="${app.listTab === key ? "active" : ""}" data-rt="list-tab" data-list="${key}">${label}</button>`).join("")}
-          </div>
-          <div class="rt-form-row">
-            <label>事项<input id="rtListText" placeholder="写一个共同计划"></label>
-            <label>日期/备注<input id="rtListNote" placeholder="可选"></label>
-            <button class="primary" data-rt="list-add">${safeIcon("plus")}添加</button>
-          </div>
-          <div class="rt-stack">${renderSharedList(app.listTab)}</div>
-        </div>
-      </div>
-      <div class="panel rt-stack rt-section">
-        <div class="rt-card-title">
-          <h3>矛盾冷静备忘录</h3>
-          <span>温柔复盘</span>
-        </div>
-        <div class="rt-form-row">
-          <label>标题<input id="rtCalmTitle" placeholder="例如：关于沟通节奏"></label>
-          <label>备忘<textarea id="rtCalmText" placeholder="只记录事实、感受、需要和下次约定"></textarea></label>
-          <button class="primary" data-rt="calm-add">${safeIcon("plus")}保存</button>
-        </div>
-        <div class="rt-stack">${renderCalmMemos()}</div>
+        ${renderMusicPanel()}
+        ${renderSharedListsPanel()}
       </div>
       ${renderPreferenceBook()}
       ${renderReconciliationPanel()}
+      ${renderDailyMoodPanel()}
+      ${renderEmotionSpectrum()}
+      ${renderTreeCarePanel()}
       ${renderMeetingMap()}
-      ${renderGrowthGoals()}
+      <div class="rt-grid two rt-section">
+        ${renderDailyBlindBox()}
+        ${renderHypotheticalQA()}
+      </div>
+      <div class="rt-grid two rt-section">
+        ${renderNoAngryCards()}
+        ${renderCloudDatePanel()}
+      </div>
+      ${renderBadgesWall()}
+      ${renderMonthlyReview()}
+      ${renderGravityPanel()}
     `;
   }
 
@@ -1460,7 +1672,11 @@
             <button class="${app.truthDareMode === "dare" ? "active" : ""}" data-rt="td-mode" data-mode="dare">大冒险</button>
           </div>
           ${renderTruthDareCard()}
-          <button class="primary" data-rt="td-draw">${safeIcon("refresh")}抽一题</button>
+          <div class="rt-inline">
+            <button class="primary" data-rt="td-draw">${safeIcon("refresh")}抽一题</button>
+            ${app.realtime.truthDare?.current ? `<button class="ghost" data-rt="question-blacklist-add" data-text="${esc(app.realtime.truthDare.current.text || "")}">加入黑名单</button>` : ""}
+          </div>
+          ${renderQuestionBlacklist()}
         </div>
         <div class="panel rt-stack">
           <div class="rt-card-title">
@@ -1509,18 +1725,19 @@
   function renderSettingsAddon() {
     const root = ensureMount("tab-settings", "rtSettings", "rt-section");
     if (!root) return;
+    // [UI改动区域] 设置中心统一承接使用提醒、备份说明、PWA 和账号配置说明。
     root.innerHTML = `
       <section class="section-head">
-        <h2>实时同步设置</h2>
-        <p>账号、主题和原有功能云端同步状态。</p>
+        <h2>设置中心</h2>
+        <p>账号、主题、数据备份、PWA 安装和全站须知统一放在这里。</p>
       </section>
-      <div class="rt-grid two">
+      <div class="rt-grid two rt-settings-grid">
         <div class="panel rt-stack">
           <div class="rt-card-title">
-            <h3>情侣账号</h3>
+            <h3>账号与密码</h3>
             <span>${app.user ? `当前：${esc(roleLabel(app.user.id))}` : "未登录"}</span>
           </div>
-          <p class="small-note">原访问密码仍由原设置页维护；情侣 A/B 账号由服务器 .env 配置。</p>
+          <p class="small-note">原访问密码在本页原设置模块里修改；情侣 A/B 账号密码在 Railway Variables 中修改后重启生效。</p>
           <div class="rt-inline">
             <button class="primary" data-rt="push-now">${safeIcon("refresh")}立即同步原功能</button>
             <button class="ghost" data-rt="logout">切换账号</button>
@@ -1537,6 +1754,67 @@
           </div>
         </div>
       </div>
+      <div class="rt-grid two rt-section">
+        <div class="panel rt-stack">
+          <div class="rt-card-title">
+            <h3>数据导入导出</h3>
+            <span>JSON 备份</span>
+          </div>
+          <p class="small-note">备份文件包含私密图文，只在两个人可信设备间保存。</p>
+          <div class="rt-guide-list rt-status-note-list">
+            <span>${esc(statusText("autosaveStatus", "自动保存等待启动"))}</span>
+            <span>${esc(statusText("backupStatus", "尚未生成本地备份"))}</span>
+            <span>${esc(statusText("pwaStatus", "PWA 状态等待检测"))}</span>
+          </div>
+          <div class="rt-inline">
+            <button class="primary" data-rt="export-data">${safeIcon("save")}导出备份</button>
+            <button class="ghost" data-rt="open-import">导入 JSON</button>
+          </div>
+        </div>
+        <div class="panel rt-stack">
+          <div class="rt-card-title">
+            <h3>PWA 桌面安装</h3>
+            <span>手机适配</span>
+          </div>
+          <div class="rt-guide-list">
+            <span>iPhone Safari：分享按钮 -> 添加到主屏幕</span>
+            <span>Android Chrome：菜单 -> 安装应用</span>
+            <span>异地访问请使用 Railway 公开网址，不使用 localhost</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>全站使用须知</h3>
+          <span>统一提醒</span>
+        </div>
+        <div class="rt-guide-list">
+          <span>断网时可以继续编辑，恢复联网后会自动同步。</span>
+          <span>安静模式开启后会暂停消息发送，只保留在线陪伴和计时状态。</span>
+          <span>和解契约未完成时，互动游戏厅会暂时锁定，完成确认后自动恢复。</span>
+          <span>手机输入框已按 Safari/PWA 优化，长文本建议写完后直接点当前卡片内按钮保存。</span>
+        </div>
+      </div>
+      ${renderSettingsGuidePanel()}
+    `;
+  }
+
+  function renderSettingsGuidePanel() {
+    // [UI改动区域] 设置中心自带教程，避免旧教程 DOM 被压缩脚本重建时丢失。
+    return `
+      <details class="rt-legacy-editor rt-settings-manual rt-section">
+        <summary>
+          <strong>PWA 与使用教程</strong>
+          <span>登录、同步、备份、手机桌面安装</span>
+        </summary>
+        <div class="rt-legacy-editor-body rt-guide-list">
+          <span>先输入原访问密码，再登录 A/B 情侣账号；所有实时内容会标记操作人。</span>
+          <span>两个人异地请打开同一个 Railway 公网网址，不要使用 localhost。</span>
+          <span>iPhone 用 Safari 打开后点分享按钮，再选择“添加到主屏幕”。</span>
+          <span>Android 用 Chrome/Edge 打开菜单，选择“安装应用”或“添加到主屏幕”。</span>
+          <span>导出 JSON 会包含私密图文，只在两个人可信设备间保存。</span>
+        </div>
+      </details>
     `;
   }
 
@@ -2045,6 +2323,303 @@
             ${ROLE_IDS.map((id) => `<div class="rt-item"><strong>${esc(roleLabel(id))}</strong><p>${esc(answers[id])}</p></div>`).join("")}
           </div>
         ` : `<p class="rt-meta">已匿名作答 ${Object.keys(answers).length} / 2，双方都答完才展示对比。</p>`}
+      </div>
+    `;
+  }
+
+  function renderDogIllustration() {
+    return `
+      <div class="rt-dog-scene" aria-hidden="true">
+        <div class="rt-cloud one"></div>
+        <div class="rt-cloud two"></div>
+        <div class="rt-paw one"></div>
+        <div class="rt-paw two"></div>
+        <div class="rt-dog">
+          <div class="rt-dog-ear left"></div>
+          <div class="rt-dog-ear right"></div>
+          <div class="rt-dog-face">
+            <i class="eye left"></i>
+            <i class="eye right"></i>
+            <i class="nose"></i>
+            <i class="mouth"></i>
+          </div>
+        </div>
+        <div class="rt-heart-line">♡ ♡ ♡</div>
+      </div>
+    `;
+  }
+
+  function renderCartoonAvatarCards(profile) {
+    const people = [
+      ["A", profile.personA || {}],
+      ["B", profile.personB || {}]
+    ];
+    return `
+      <div class="rt-avatar-row">
+        ${people.map(([role, person]) => `
+          <div class="rt-avatar-dog-card">
+            <div class="avatar">
+              ${person.avatar ? `<img src="${esc(person.avatar)}" alt="${esc(roleLabel(role))}">` : `<div class="avatar-empty">${roleLabel(role).slice(0, 1)}</div>`}
+            </div>
+            <strong>${esc(roleLabel(role))}</strong>
+            <span>${esc(person.name || roleLabel(role))}</span>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function renderMusicPanel() {
+    return `
+      <div class="panel rt-stack">
+        <div class="rt-card-title">
+          <h3>同步音乐播放器</h3>
+          <span>${esc(app.realtime.music.updatedById ? displayActor(app.realtime.music.updatedById, app.realtime.music.updatedBy) : "等待切歌")}</span>
+        </div>
+        <div class="rt-music-now">${esc(app.realtime.music.title || "还没有选择音乐")}</div>
+        <audio id="rtMusicAudio" class="rt-audio" controls></audio>
+        <div class="rt-form-row">
+          <label>音乐标题<input id="rtMusicTitle" placeholder="歌名或心情"></label>
+          <label>音乐链接<input id="rtMusicUrl" placeholder="https://... 或选择本地音频"></label>
+          <button class="primary" data-rt="music-add">${safeIcon("plus")}加入</button>
+        </div>
+        <label>本地音频<input id="rtMusicFile" type="file" accept="audio/*"></label>
+        <div class="rt-stack">${renderMusicTracks()}</div>
+      </div>
+    `;
+  }
+
+  function renderSharedListsPanel() {
+    return `
+      <div class="panel rt-stack">
+        <div class="rt-card-title">
+          <h3>共享清单</h3>
+          <span>${esc(listLabels[app.listTab])}</span>
+        </div>
+        <div class="rt-list-tabs">
+          ${Object.entries(listLabels).map(([key, label]) => `<button class="${app.listTab === key ? "active" : ""}" data-rt="list-tab" data-list="${key}">${label}</button>`).join("")}
+        </div>
+        <div class="rt-form-row">
+          <label>事项<input id="rtListText" placeholder="写一个共同计划"></label>
+          <label>日期/备注<input id="rtListNote" placeholder="可选"></label>
+          <button class="primary" data-rt="list-add">${safeIcon("plus")}添加</button>
+        </div>
+        <div class="rt-stack">${renderSharedList(app.listTab)}</div>
+      </div>
+    `;
+  }
+
+  function renderSweetTasksPanel() {
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>甜蜜小任务</h3>
+          <span>${completedTasks()} / ${app.realtime.tasks.length} 已完成</span>
+        </div>
+        <div class="rt-form-row">
+          <label>任务<input id="rtTaskTitle" placeholder="例如：今晚睡前互发一句夸夸"></label>
+          <label>备注<input id="rtTaskDetail" placeholder="可选"></label>
+          <button class="primary" data-rt="task-add">${safeIcon("plus")}发送</button>
+        </div>
+        <div class="rt-stack">${renderSweetTasks()}</div>
+      </div>
+    `;
+  }
+
+  function renderDailyMoodPanel() {
+    const moods = app.realtime.moods[today()] || {};
+    const myMood = moods[app.user && app.user.id] || null;
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>每日情绪打卡</h3>
+          <span>${today()}</span>
+        </div>
+        <div class="rt-mood-buttons">
+          ${moodOptions.map((mood) => `<button class="${(myMood && myMood.mood === mood) || app.selectedMood === mood ? "active" : ""}" data-rt="mood-select" data-mood="${esc(mood)}">${esc(mood)}</button>`).join("")}
+        </div>
+        <label>今天想补一句<textarea id="rtMoodNote" placeholder="写给${esc(roleLabel(otherRoleId()))}看的心情小纸条">${esc(myMood && myMood.note || "")}</textarea></label>
+        <button class="primary" data-rt="mood-save">${safeIcon("save")}保存今日心情</button>
+        <div class="rt-grid two">${renderMoodCards(moods)}</div>
+      </div>
+    `;
+  }
+
+  function renderTreeCarePanel() {
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>恋爱小树养成</h3>
+          <span>Lv.${app.realtime.tree.level}</span>
+        </div>
+        <div class="rt-tree-stage">
+          <div class="rt-tree" style="--tree-size:${Math.min(128, 74 + app.realtime.tree.level * 8)}px">
+            <div class="rt-tree-crown"></div>
+            <div class="rt-tree-trunk"></div>
+            <div class="rt-tree-pot"></div>
+          </div>
+        </div>
+        <div class="progress-track"><div class="progress-fill" style="width:${treeProgress()}%"></div></div>
+        <div class="rt-inline">
+          <button class="primary" data-rt="tree-water">一起浇水</button>
+          <span class="rt-meta">累计 ${app.realtime.tree.totalWater} 滴，上次 ${esc(app.realtime.tree.lastWateredById ? displayActor(app.realtime.tree.lastWateredById, app.realtime.tree.lastWateredBy) : "还没有浇水")}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderMissRadar() {
+    const events = (app.realtime.missYouEvents || []).slice().reverse().slice(0, 6);
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>想念雷达</h3>
+          <span>${events.length ? "最近有信号" : "等待一次心动信号"}</span>
+        </div>
+        <div class="rt-radar-stage">
+          <div class="rt-radar-heart">♡</div>
+          <button class="primary" data-rt="miss-you">${safeIcon("play")}发送思念</button>
+        </div>
+        <div class="rt-stack">
+          ${events.length ? events.map((item) => `<div class="rt-item"><strong>${esc(displayActor(item.actor, item.actorName))}</strong><p>${esc(item.message || "我想你啦")}</p><small>${esc(formatTime(item.createdAt || item.updatedAt))}</small></div>`).join("") : `<div class="empty">发送后，对方会收到全屏爱心动画。</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderDailyBlindBox() {
+    const current = app.realtime.blindBox?.current;
+    return `
+      <div class="panel rt-stack">
+        <div class="rt-card-title">
+          <h3>每日盲盒任务</h3>
+          <button class="ghost" data-rt="blindbox-draw">抽今天</button>
+        </div>
+        <div class="rt-game-result">
+          <span class="rt-badge">${esc(app.realtime.blindBox?.date || today())}</span>
+          <strong>${esc(current?.text || "还没有打开今天的盲盒")}</strong>
+          <small>${current ? `${esc(displayActor(current.actor, current.actorName))} 抽到` : "抽取会同步到双方屏幕"}</small>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderHypotheticalQA() {
+    const state = app.realtime.hypothetical || defaultHypotheticalState();
+    const current = state.current || randomHypotheticalQuestion();
+    const answers = state.answers || {};
+    const mine = app.user && answers[app.user.id]?.answer;
+    const bothDone = ROLE_IDS.every((id) => answers[id]);
+    return `
+      <div class="panel rt-stack">
+        <div class="rt-card-title">
+          <h3>假想问答</h3>
+          <button class="ghost" data-rt="hyp-reset">换一题</button>
+        </div>
+        <div class="rt-game-result">
+          <strong>${esc(current.text)}</strong>
+          <div class="rt-quiz-options">
+            ${(current.options || []).map((option) => `<button class="${mine === option ? "active" : ""}" data-rt="hyp-answer" data-answer="${esc(option)}">${esc(option)}</button>`).join("")}
+          </div>
+          ${bothDone ? `<div class="rt-grid two">${ROLE_IDS.map((id) => `<div class="rt-item"><strong>${esc(roleLabel(id))}</strong><p>${esc(answers[id]?.answer || "")}</p></div>`).join("")}</div>` : `<p class="rt-meta">已回答 ${Object.keys(answers).length} / 2，双方都答完显示对比。</p>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderNoAngryCards() {
+    const cards = app.realtime.noAngryCards || [];
+    return `
+      <div class="panel rt-stack">
+        <div class="rt-card-title">
+          <h3>免生气卡片</h3>
+          <button class="ghost" data-rt="no-angry-create">生成一张</button>
+        </div>
+        <div class="rt-stack">
+          ${cards.length ? cards.slice(0, 6).map((item) => `
+            <div class="rt-item ${item.usedAt ? "done" : ""}">
+              <strong>${esc(item.text)}</strong>
+              <small>${esc(displayActor(item.actor, item.actorName))} 创建</small>
+              ${item.usedAt ? `<p>已使用：${esc(formatTime(item.usedAt))}</p>` : `<button class="primary" data-rt="no-angry-use" data-id="${esc(item.id)}">使用这张</button>`}
+            </div>
+          `).join("") : `<div class="empty">给彼此留一张温柔暂停卡。</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCloudDatePanel() {
+    const dates = getSharedList("dates");
+    return `
+      <div class="panel rt-stack">
+        <div class="rt-card-title">
+          <h3>云约会预约</h3>
+          <span>复用约会计划表</span>
+        </div>
+        <div class="rt-form-row">
+          <label>主题<input id="rtCloudDateTitle" placeholder="例如：周五云电影"></label>
+          <label>时间<input id="rtCloudDateTime" type="datetime-local"></label>
+          <button class="primary" data-rt="cloud-date-add">${safeIcon("plus")}预约</button>
+        </div>
+        <div class="rt-stack">${dates.length ? dates.slice(0, 5).map((item) => `<div class="rt-item ${item.done ? "done" : ""}"><strong>${esc(item.text)}</strong><p>${esc(item.note || "待定时间")}</p></div>`).join("") : `<div class="empty">约会计划表还是空的。</div>`}</div>
+      </div>
+    `;
+  }
+
+  function renderBadgesWall() {
+    const badges = badgeCatalog.map((badge) => ({ ...badge, unlocked: Boolean(badge.test()) }));
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>成就徽章墙</h3>
+          <span>${badges.filter((item) => item.unlocked).length} / ${badges.length}</span>
+        </div>
+        <div class="rt-badge-wall">
+          ${badges.map((badge) => `<div class="rt-badge-card ${badge.unlocked ? "unlocked" : ""}"><strong>${esc(badge.label)}</strong><span>${badge.unlocked ? "已点亮" : "待解锁"}</span></div>`).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderMonthlyReview() {
+    const month = today().slice(0, 7);
+    const reviews = app.realtime.monthlyReviews?.[month] || {};
+    const mine = app.user && reviews[app.user.id];
+    return `
+      <div class="panel rt-stack rt-section">
+        <div class="rt-card-title">
+          <h3>月度互评</h3>
+          <span>${month}</span>
+        </div>
+        <div class="rt-form-row">
+          <label>本月分数<input id="rtReviewScore" type="number" min="1" max="10" value="${esc(mine?.score || 10)}"></label>
+          <label>想说的话<textarea id="rtReviewText" placeholder="写下这个月最想感谢或改进的地方">${esc(mine?.text || "")}</textarea></label>
+          <button class="primary" data-rt="monthly-review-save">${safeIcon("save")}保存月评</button>
+        </div>
+        <div class="rt-grid two">
+          ${ROLE_IDS.map((id) => {
+            const item = reviews[id];
+            return `<div class="rt-item"><strong>${esc(roleLabel(id))}：${esc(item ? `${item.score} 分` : "未填写")}</strong><p>${esc(item?.text || "月底一起慢慢写。")}</p></div>`;
+          }).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderQuestionBlacklist() {
+    const list = app.realtime.questionBlacklist || [];
+    return `
+      <div class="rt-question-blacklist">
+        <div class="rt-card-title">
+          <h4>题目黑名单</h4>
+          ${list.length ? `<button class="ghost" data-rt="question-blacklist-clear">清空</button>` : ""}
+        </div>
+        ${list.length ? list.slice(0, 8).map((item) => `
+          <span class="rt-blacklist-pill">
+            ${esc(item.text)}
+            <button data-rt="question-blacklist-delete" data-id="${esc(item.id)}">×</button>
+          </span>
+        `).join("") : `<p class="rt-meta">不想再抽到的题，可以在结果出现后加入黑名单。</p>`}
       </div>
     `;
   }
@@ -2654,7 +3229,7 @@
     const mode = app.truthDareMode === "dare" ? "dare" : "truth";
     const pool = getTruthDarePool(category, mode);
     const item = pickWithoutRecent(pool, app.realtime.truthDare && app.realtime.truthDare.recentIds);
-    if (!item) return;
+    if (!item) return toast("这个分类的题目都在黑名单里，可以先清空黑名单。");
     const recentIds = updateRecentIds(app.realtime.truthDare && app.realtime.truthDare.recentIds, item.id, 12);
     sendOperation("truthDare.draw", { category, mode, item, recentIds });
     triggerGameFlash(mode === "dare" ? "大冒险！" : "真心话！");
@@ -2929,6 +3504,63 @@
     renderAddon();
   }
 
+  function addQuestionBlacklist(text) {
+    text = String(text || "").trim();
+    if (!text) return toast("先抽到一题，再加入黑名单。");
+    sendOperation("question.blacklist.add", { id: uuid(), text });
+  }
+
+  function deleteQuestionBlacklist(idOrText) {
+    const item = (app.realtime.questionBlacklist || []).find((entry) => entry.id === idOrText || entry.text === idOrText);
+    if (!item) return;
+    sendOperation("question.blacklist.delete", { id: item.id, text: item.text });
+  }
+
+  function clearQuestionBlacklist() {
+    sendOperation("question.blacklist.clear", {});
+  }
+
+  function drawBlindBoxTask() {
+    const pool = blindBoxTasks.map((text, index) => ({ id: `blind-${index}`, text }));
+    const item = pickWithoutRecent(pool, app.realtime.blindBox?.recentIds);
+    if (!item) return;
+    const recentIds = updateRecentIds(app.realtime.blindBox?.recentIds, item.id, 8);
+    sendOperation("blindBox.draw", { date: today(), item, recentIds });
+  }
+
+  function resetHypotheticalQuestion() {
+    sendOperation("hypothetical.reset", { question: randomHypotheticalQuestion() });
+  }
+
+  function answerHypotheticalQuestion(answer) {
+    sendOperation("hypothetical.answer", { answer });
+  }
+
+  function createNoAngryCard() {
+    const text = noAngryCardTemplates[Math.floor(Math.random() * noAngryCardTemplates.length)];
+    sendOperation("noAngryCard.create", { id: uuid(), text });
+  }
+
+  function useNoAngryCard(id) {
+    sendOperation("noAngryCard.use", { id });
+  }
+
+  function addCloudDate() {
+    const title = valueOf("rtCloudDateTitle").trim();
+    const time = valueOf("rtCloudDateTime");
+    if (!title) return toast("先写一个云约会主题。");
+    const note = time ? new Date(time).toLocaleString() : "时间待定";
+    sendOperation("list.add", { list: "dates", id: uuid(), text: title, note });
+    setValue("rtCloudDateTitle", "");
+    setValue("rtCloudDateTime", "");
+  }
+
+  function saveMonthlyReview() {
+    const score = Number(valueOf("rtReviewScore") || 10);
+    const text = valueOf("rtReviewText").trim();
+    sendOperation("monthlyReview.submit", { month: today().slice(0, 7), score, text });
+  }
+
   function notifyRemote(op) {
     const actor = displayActor(op.actor, op.actor && op.actor.name);
     const map = {
@@ -2969,6 +3601,13 @@
       "memory.draw": "抽取了一段回忆",
       "growthGoal.add": "添加了共同成长目标",
       "growthGoal.check": "完成了一次目标打卡",
+      "question.blacklist.add": "更新了题目黑名单",
+      "blindBox.draw": "抽取了每日盲盒任务",
+      "hypothetical.reset": "换了一道假想问答",
+      "hypothetical.answer": "回答了假想问答",
+      "noAngryCard.create": "生成了免生气卡片",
+      "noAngryCard.use": "使用了免生气卡片",
+      "monthlyReview.submit": "提交了月度互评",
       "theme.set": "切换了主题"
     };
     toast(`${actor}${map[op.type] || "更新了内容"}。`);
@@ -3005,7 +3644,11 @@
       "emotion-save": "记录情绪",
       "preference-save": "编辑偏爱记录",
       "auction-bid": "默契拍卖",
-      "fate-answer": "命运选择"
+      "fate-answer": "命运选择",
+      "blindbox-draw": "抽每日盲盒",
+      "hyp-answer": "回答假想问答",
+      "no-angry-create": "生成免生气卡",
+      "monthly-review-save": "写月度互评"
     };
     return map[action] || "正在操作";
   }
@@ -3169,7 +3812,25 @@
     const key = normalizeTruthDareCategory(category);
     const deck = truthDareDecks[key];
     const list = deck[mode === "dare" ? "dare" : "truth"] || [];
-    return list.map((text, index) => ({ id: `${key}-${mode}-${index}`, text }));
+    const blacklist = questionBlacklistTexts();
+    return list
+      .map((text, index) => ({ id: `${key}-${mode}-${index}`, text }))
+      .filter((item) => !blacklist.has(item.text));
+  }
+
+  function extendTruthDareDecks() {
+    Object.entries(extraTruthDareDecks).forEach(([key, deck]) => {
+      if (!truthDareDecks[key]) return;
+      ["truth", "dare"].forEach((mode) => {
+        const current = truthDareDecks[key][mode] || [];
+        const merged = current.concat(deck[mode] || []);
+        truthDareDecks[key][mode] = Array.from(new Set(merged));
+      });
+    });
+  }
+
+  function questionBlacklistTexts() {
+    return new Set((app.realtime.questionBlacklist || []).map((item) => item.text).filter(Boolean));
   }
 
   function pickWithoutRecent(pool, recentIds) {
@@ -3253,6 +3914,203 @@
 
   function randomFateQuestion() {
     return clone(fateQuestions[Math.floor(Math.random() * fateQuestions.length)]);
+  }
+
+  function defaultHypotheticalState() {
+    return {
+      current: {
+        id: "hyp-1",
+        text: "如果今晚能瞬移见面 2 小时，你们会先做什么？",
+        options: ["吃一顿饭", "散步聊天", "安静抱抱"]
+      },
+      answers: {},
+      updatedAt: ""
+    };
+  }
+
+  function randomHypotheticalQuestion() {
+    return clone(hypotheticalQuestions[Math.floor(Math.random() * hypotheticalQuestions.length)]);
+  }
+
+  function countCompletedGoals() {
+    const goals = app.realtime.growthGoals || defaultGrowthGoals();
+    return Object.values(goals).reduce((sum, list) => sum + (Array.isArray(list) ? list.filter((item) => ROLE_IDS.every((id) => item.checks && item.checks[id])).length : 0), 0);
+  }
+
+  function statusText(id, fallback) {
+    const node = document.getElementById(id);
+    return node && node.textContent ? node.textContent : fallback;
+  }
+
+  function compactStatusStrip() {
+    // [删除冗余模块] 顶部只保留实时同步相关状态；备份/PWA 提醒统一移入设置中心。
+    ["autosaveStatus", "backupStatus", "pwaStatus"].forEach((id) => {
+      const chip = document.getElementById(id);
+      if (!chip) return;
+      chip.classList.add("rt-settings-only-chip");
+      chip.setAttribute("aria-hidden", "true");
+    });
+  }
+
+  function compactLegacyHome() {
+    const home = document.getElementById("tab-home");
+    const realtimeHome = document.getElementById("rtHome");
+    if (!home || !realtimeHome) return;
+
+    if (home.firstElementChild !== realtimeHome) {
+      home.insertBefore(realtimeHome, home.firstElementChild);
+    }
+
+    let wrapper = document.getElementById("rtLegacyHomeEditor");
+    if (!wrapper) {
+      wrapper = document.createElement("details");
+      wrapper.id = "rtLegacyHomeEditor";
+      wrapper.className = "rt-legacy-editor panel rt-section";
+      wrapper.innerHTML = `
+        <summary>
+          <strong>资料编辑</strong>
+          <span>头像、昵称、恋爱日期、城市天气和双方档案</span>
+        </summary>
+        <div class="rt-legacy-editor-body"></div>
+      `;
+    }
+
+    const body = wrapper.querySelector(".rt-legacy-editor-body");
+    if (!body) return;
+
+    // [删除冗余模块] 旧主页资料编辑仍保留，但折叠为唯一资料编辑入口，避免与新主页概览重复展示。
+    Array.from(home.children)
+      .filter((node) => node !== realtimeHome && node !== wrapper)
+      .forEach((node) => body.appendChild(node));
+
+    if (body.children.length) {
+      if (wrapper.parentElement !== home || wrapper.previousElementSibling !== realtimeHome) {
+        home.insertBefore(wrapper, realtimeHome.nextSibling);
+      }
+    } else {
+      wrapper.remove();
+    }
+  }
+
+  function compactLegacyBoard(tabId, addonId, title, description) {
+    const tab = document.getElementById(tabId);
+    const addon = document.getElementById(addonId);
+    if (!tab || !addon) return;
+
+    if (tab.firstElementChild !== addon) {
+      tab.insertBefore(addon, tab.firstElementChild);
+    }
+
+    const wrapperId = `${addonId}LegacyWrap`;
+    let wrapper = document.getElementById(wrapperId);
+    if (!wrapper) {
+      wrapper = document.createElement("details");
+      wrapper.id = wrapperId;
+      wrapper.className = "rt-legacy-editor panel rt-section";
+      wrapper.innerHTML = `
+        <summary>
+          <strong>${esc(title)}</strong>
+          <span>${esc(description)}</span>
+        </summary>
+        <div class="rt-legacy-editor-body"></div>
+      `;
+    }
+
+    const body = wrapper.querySelector(".rt-legacy-editor-body");
+    if (!body) return;
+
+    // [删除冗余模块] 同类老模块保留在折叠入口，避免同一板块出现多套并列录入入口。
+    Array.from(tab.children)
+      .filter((node) => node !== addon && node !== wrapper && node.id !== "usageGuide")
+      .forEach((node) => body.appendChild(node));
+
+    if (body.children.length) {
+      if (wrapper.parentElement !== tab || wrapper.previousElementSibling !== addon) {
+        tab.insertBefore(wrapper, addon.nextSibling);
+      }
+    } else {
+      wrapper.remove();
+    }
+  }
+
+  function relocateUsageGuide() {
+    const settingsPanel = document.getElementById("tab-settings");
+    const settingsRoot = document.getElementById("rtSettings");
+    const guide = document.getElementById("usageGuide");
+    if (!settingsPanel || !settingsRoot || !guide) return;
+
+    // [删除冗余模块] 全站使用提醒、备份警告、浏览器兼容说明统一移动到设置中心。
+    guide.classList.add("rt-settings-guide", "rt-section");
+    if (guide.parentElement !== settingsPanel) {
+      settingsPanel.appendChild(guide);
+    }
+  }
+
+  function jumpToTab(tab) {
+    const target = ["home", "records", "tools", "games", "settings"].includes(tab) ? tab : "home";
+    if (typeof switchTab === "function") switchTab(target);
+    else {
+      document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.id === `tab-${target}`));
+      document.querySelectorAll("#mainNav [data-tab]").forEach((button) => button.classList.toggle("active", button.dataset.tab === target));
+    }
+    setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 30);
+  }
+
+  function applySimplifiedNavigation() {
+    const nav = document.getElementById("mainNav");
+    if (!nav) return;
+    nav.classList.add("rt-five-nav");
+    const labels = {
+      home: "主页",
+      records: "回忆记录库",
+      tools: "趣味工具&云陪伴",
+      games: "互动游戏厅",
+      settings: "设置中心"
+    };
+
+    Object.entries(labels).forEach(([tab, label]) => {
+      const button = nav.querySelector(`[data-tab="${tab}"]`);
+      if (!button) return;
+      if (!button.dataset.rtRelabeled) {
+        button.innerHTML = `<span>${label}</span>`;
+        button.dataset.rtRelabeled = "1";
+      }
+    });
+
+    // [删除冗余模块] 隐藏旧相册独立导航，相册功能已收拢到“回忆记录库”。
+    const albumButton = nav.querySelector('[data-tab="album"]');
+    if (albumButton) {
+      albumButton.hidden = true;
+      albumButton.setAttribute("aria-hidden", "true");
+    }
+    const albumPanel = document.getElementById("tab-album");
+    albumPanel?.classList.add("rt-retired-tab");
+    if (albumPanel?.classList.contains("active")) jumpToTab("records");
+  }
+
+  function installIOSInputGuards() {
+    if (app.inputGuardInstalled) return;
+    app.inputGuardInstalled = true;
+    document.documentElement.classList.add("rt-ios-guard");
+
+    document.addEventListener("focusin", (event) => {
+      if (!event.target.matches("input, textarea, select")) return;
+      document.documentElement.classList.add("rt-input-focus");
+      setTimeout(() => {
+        try {
+          event.target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+        } catch (error) {}
+      }, 260);
+    });
+
+    document.addEventListener("focusout", (event) => {
+      if (!event.target.matches("input, textarea, select")) return;
+      setTimeout(() => {
+        if (!document.activeElement || !document.activeElement.matches("input, textarea, select")) {
+          document.documentElement.classList.remove("rt-input-focus");
+        }
+      }, 80);
+    });
   }
 
   function canSendMessage() {
@@ -3359,7 +4217,11 @@
       "meeting.add": 2,
       "capsule.entry": 2,
       "delayedLetter.create": 2,
-      "whisper.send": 1
+      "whisper.send": 1,
+      "blindBox.draw": 1,
+      "hypothetical.answer": 1,
+      "noAngryCard.create": 1,
+      "monthlyReview.submit": 2
     };
     const amount = rewards[op.type] || 0;
     if (!amount) return;
@@ -3507,6 +4369,11 @@
       meetingMap: { points: [] },
       memoryDraw: { current: null, updatedAt: "" },
       growthGoals: defaultGrowthGoals(),
+      questionBlacklist: [],
+      blindBox: { date: "", current: null, recentIds: [], updatedAt: "" },
+      hypothetical: defaultHypotheticalState(),
+      noAngryCards: [],
+      monthlyReviews: {},
       lists: { travel: [], dates: [], shopping: [] },
       calmMemos: [],
       missYouEvents: [],

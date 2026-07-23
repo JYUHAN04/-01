@@ -475,6 +475,19 @@ function defaultRealtimeState() {
     meetingMap: { points: [] },
     memoryDraw: { current: null, updatedAt: "" },
     growthGoals: { short: [], mid: [], long: [] },
+    questionBlacklist: [],
+    blindBox: { date: "", current: null, recentIds: [], updatedAt: "" },
+    hypothetical: {
+      current: {
+        id: "hyp-1",
+        text: "如果今晚能瞬移见面 2 小时，你们会先做什么？",
+        options: ["吃一顿饭", "散步聊天", "安静抱抱"]
+      },
+      answers: {},
+      updatedAt: ""
+    },
+    noAngryCards: [],
+    monthlyReviews: {},
     lists: {
       travel: [],
       dates: [],
@@ -923,6 +936,90 @@ function applyOperation(op) {
       break;
     }
 
+    // [新增功能代码] 五板块整理后的轻量互动工具。
+    case "question.blacklist.add": {
+      const text = String(op.payload.text || "").trim().slice(0, 300);
+      if (text && !(realtime.questionBlacklist || []).some((item) => item.text === text)) {
+        realtime.questionBlacklist.unshift(withActor({
+          id: op.payload.id || crypto.randomUUID(),
+          text,
+          createdAt: at
+        }, op, at));
+      }
+      realtime.questionBlacklist = (realtime.questionBlacklist || []).slice(0, 80);
+      break;
+    }
+
+    case "question.blacklist.delete":
+      realtime.questionBlacklist = (realtime.questionBlacklist || []).filter((item) => item.id !== op.payload.id && item.text !== op.payload.text);
+      break;
+
+    case "question.blacklist.clear":
+      realtime.questionBlacklist = [];
+      break;
+
+    case "blindBox.draw":
+      realtime.blindBox = {
+        date: String(op.payload.date || at.slice(0, 10)).slice(0, 10),
+        current: withActor({
+          id: op.payload.item?.id || crypto.randomUUID(),
+          text: String(op.payload.item?.text || "").slice(0, 160),
+          done: false
+        }, op, at),
+        recentIds: Array.isArray(op.payload.recentIds) ? op.payload.recentIds.slice(-8).map(String) : [],
+        updatedAt: at
+      };
+      break;
+
+    case "hypothetical.reset":
+      realtime.hypothetical = {
+        current: sanitizeChoiceQuestion(op.payload.question),
+        answers: {},
+        updatedAt: at,
+        updatedBy: op.actor.name,
+        updatedById: op.actor.id
+      };
+      break;
+
+    case "hypothetical.answer":
+      realtime.hypothetical ||= { current: sanitizeChoiceQuestion(null), answers: {}, updatedAt: "" };
+      realtime.hypothetical.answers ||= {};
+      realtime.hypothetical.answers[op.actor.id] = {
+        answer: String(op.payload.answer || "").slice(0, 80),
+        actorName: op.actor.name,
+        updatedAt: at
+      };
+      break;
+
+    case "noAngryCard.create":
+      realtime.noAngryCards.unshift(withActor({
+        id: op.payload.id || crypto.randomUUID(),
+        text: String(op.payload.text || "").slice(0, 160),
+        usedAt: "",
+        createdAt: at
+      }, op, at));
+      realtime.noAngryCards = realtime.noAngryCards.slice(0, 30);
+      break;
+
+    case "noAngryCard.use":
+      updateById(realtime.noAngryCards, op.payload.id, (item) => {
+        Object.assign(item, { usedAt: at, usedById: op.actor.id, usedBy: op.actor.name }, actorPatch(op, at));
+      });
+      break;
+
+    case "monthlyReview.submit": {
+      const month = String(op.payload.month || at.slice(0, 7)).slice(0, 7);
+      realtime.monthlyReviews[month] ||= {};
+      realtime.monthlyReviews[month][op.actor.id] = {
+        score: Math.max(1, Math.min(10, Number(op.payload.score || 10))),
+        text: String(op.payload.text || "").slice(0, 1200),
+        actor: op.actor.id,
+        actorName: op.actor.name,
+        updatedAt: at
+      };
+      break;
+    }
+
     // [新增] 双人同步小游戏操作。
     case "truthDare.draw": {
       ensureNotGameLocked(realtime, op.type);
@@ -1108,6 +1205,21 @@ function sanitizeFateQuestion(question, at, actorName) {
   };
 }
 
+function sanitizeChoiceQuestion(question) {
+  const fallback = {
+    id: "hyp-1",
+    text: "如果今晚能瞬移见面 2 小时，你们会先做什么？",
+    options: ["吃一顿饭", "散步聊天", "安静抱抱"]
+  };
+  const source = question && typeof question === "object" ? question : fallback;
+  const options = Array.isArray(source.options) && source.options.length >= 2 ? source.options.slice(0, 4) : fallback.options;
+  return {
+    id: String(source.id || crypto.randomUUID()).slice(0, 80),
+    text: String(source.text || fallback.text).slice(0, 220),
+    options: options.map((item) => String(item).slice(0, 80))
+  };
+}
+
 function ensureNotGameLocked(realtime, type) {
   const locked = (realtime.reconciliations || []).some((item) => item.status !== "resolved");
   if (locked) throw new Error(`Games locked by reconciliation: ${type}`);
@@ -1132,7 +1244,11 @@ function grantGravityForOperation(realtime, op, at) {
     "meeting.add": 2,
     "capsule.entry": 2,
     "delayedLetter.create": 2,
-    "whisper.send": 1
+    "whisper.send": 1,
+    "blindBox.draw": 1,
+    "hypothetical.answer": 1,
+    "noAngryCard.create": 1,
+    "monthlyReview.submit": 2
   };
   const amount = rewards[op.type] || 0;
   if (!amount) return;
