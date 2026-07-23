@@ -39,6 +39,7 @@
     originalPersistNow: null,
     identityTextOriginals: new WeakMap(),
     inputGuardInstalled: false,
+    pendingRenderAfterEdit: false,
     gameFlash: "",
     gameFlashTimer: null,
     musicEventGuardUntil: 0,
@@ -391,7 +392,7 @@
     // [新增] 定时刷新倒计时类模块，并从云端拉取到期信笺/胶囊的可见内容。
     setInterval(() => {
       if (app.token) fetchSnapshot();
-      renderAddon();
+      renderWhenIdle();
     }, 30000);
   }
 
@@ -791,7 +792,7 @@
     if (message.type === "presence") {
       app.presence = message.presence || [];
       updateConnectionStatus();
-      renderAddon();
+      renderWhenIdle();
       return;
     }
 
@@ -1510,7 +1511,28 @@
 
   function deferRender() {
     clearTimeout(app.renderTimer);
-    app.renderTimer = setTimeout(renderAddon, 60);
+    if (isFormEditing()) {
+      app.pendingRenderAfterEdit = true;
+      return;
+    }
+    app.renderTimer = setTimeout(() => renderWhenIdle(), 60);
+  }
+
+  function renderWhenIdle() {
+    if (isFormEditing()) {
+      app.pendingRenderAfterEdit = true;
+      return;
+    }
+    app.pendingRenderAfterEdit = false;
+    renderAddon();
+  }
+
+  function isFormEditing() {
+    const active = document.activeElement;
+    if (!active || !active.matches) return false;
+    if (!active.matches("input, textarea, select")) return false;
+    const type = String(active.type || "").toLowerCase();
+    return !["button", "submit", "reset", "checkbox", "radio", "file", "range", "color"].includes(type);
   }
 
   function renderHomeAddon() {
@@ -4145,11 +4167,6 @@
     document.addEventListener("focusin", (event) => {
       if (!event.target.matches("input, textarea, select")) return;
       document.documentElement.classList.add("rt-input-focus");
-      setTimeout(() => {
-        try {
-          event.target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
-        } catch (error) {}
-      }, 260);
     });
 
     document.addEventListener("focusout", (event) => {
@@ -4157,8 +4174,9 @@
       setTimeout(() => {
         if (!document.activeElement || !document.activeElement.matches("input, textarea, select")) {
           document.documentElement.classList.remove("rt-input-focus");
+          if (app.pendingRenderAfterEdit) renderWhenIdle();
         }
-      }, 80);
+      }, 220);
     });
   }
 

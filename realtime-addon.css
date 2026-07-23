@@ -1471,9 +1471,19 @@ html.rt-ios-guard select {
   scroll-margin-bottom: 120px;
 }
 
+html.rt-ios-guard,
+html.rt-ios-guard body {
+  overscroll-behavior-y: contain;
+}
+
+html.rt-ios-guard textarea,
+html.rt-ios-guard input {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 html.rt-input-focus .bottom-nav.rt-five-nav {
-  position: sticky;
-  top: 0;
+  position: fixed;
 }
 
 .modal,
@@ -1523,6 +1533,10 @@ html.rt-input-focus .bottom-nav.rt-five-nav {
     padding: 6px;
     border-radius: 20px;
     scrollbar-width: none;
+  }
+
+  html.rt-input-focus .bottom-nav.rt-five-nav {
+    top: calc(6px + env(safe-area-inset-top, 0px));
   }
 
   .bottom-nav.rt-five-nav::-webkit-scrollbar {
