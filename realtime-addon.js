@@ -40,7 +40,12 @@
     identityTextOriginals: new WeakMap(),
     inputGuardInstalled: false,
     gameFlash: "",
-    gameFlashTimer: null
+    gameFlashTimer: null,
+    musicEventGuardUntil: 0,
+    lastMusicStateSignature: "",
+    lastMusicStateSentAt: 0,
+    lastToastMessage: "",
+    lastToastAt: 0
   };
 
   // [新增] 动态身份称谓与题库配置：A/B 只作为数据角色，页面始终按当前账号渲染“我/宝宝”。
@@ -3063,44 +3068,87 @@
 
   function setMusicPlayback(isPlaying) {
     const audio = document.getElementById("rtMusicAudio");
-    sendOperation("music.state", {
+    if (Date.now() < app.musicEventGuardUntil) return;
+
+    const currentTime = audio ? audio.currentTime : app.realtime.music.currentTime || 0;
+    const volume = audio ? audio.volume : app.realtime.music.volume || 0.65;
+    const nextPayload = {
       ...app.realtime.music,
       isPlaying,
-      currentTime: audio ? audio.currentTime : app.realtime.music.currentTime || 0,
-      volume: audio ? audio.volume : app.realtime.music.volume || 0.65
-    });
+      currentTime,
+      volume
+    };
+    const signature = musicStateSignature(nextPayload);
+    if (signature === app.lastMusicStateSignature && Date.now() - app.lastMusicStateSentAt < 2500) return;
+    if (
+      app.realtime.music.isPlaying === isPlaying &&
+      Math.abs(Number(app.realtime.music.currentTime || 0) - Number(currentTime || 0)) < 1.2 &&
+      Math.abs(Number(app.realtime.music.volume || 0.65) - Number(volume || 0.65)) < 0.02
+    ) {
+      return;
+    }
+
+    app.lastMusicStateSignature = signature;
+    app.lastMusicStateSentAt = Date.now();
+    sendOperation("music.state", nextPayload);
   }
 
   function applyMusicToElement() {
     const audio = document.getElementById("rtMusicAudio");
     if (!audio) return;
     const music = app.realtime.music || {};
-    if (music.url && audio.src !== music.url) audio.src = music.url;
-    if (typeof music.volume === "number") audio.volume = music.volume;
-    if (Number.isFinite(Number(music.currentTime)) && Math.abs(audio.currentTime - Number(music.currentTime)) > 2) {
-      try { audio.currentTime = Number(music.currentTime); } catch (error) {}
-    }
-    if (music.isPlaying) {
-      audio.play().catch(() => {
-        setText("rtConnectStatus", "音乐等待点击授权播放");
-      });
-    } else {
-      audio.pause();
+    // [修复] 接收云端音乐状态时会触发 audio 的 play/pause/seek/volume 事件，这些程序性事件不应再反向发送同步操作。
+    app.musicEventGuardUntil = Date.now() + 1400;
+    try {
+      if (music.url && audio.src !== music.url) audio.src = music.url;
+      if (typeof music.volume === "number" && Math.abs(audio.volume - music.volume) > 0.01) audio.volume = music.volume;
+      if (Number.isFinite(Number(music.currentTime)) && Math.abs(audio.currentTime - Number(music.currentTime)) > 2) {
+        try { audio.currentTime = Number(music.currentTime); } catch (error) {}
+      }
+      if (music.isPlaying) {
+        audio.play().catch(() => {
+          setText("rtConnectStatus", "音乐等待点击授权播放");
+        });
+      } else if (!audio.paused) {
+        audio.pause();
+      }
+    } finally {
+      setTimeout(() => {
+        app.musicEventGuardUntil = Math.min(app.musicEventGuardUntil, Date.now());
+      }, 1500);
     }
 
     if (!audio.__rtReady) {
       audio.__rtReady = true;
       audio.addEventListener("play", () => {
+        if (Date.now() < app.musicEventGuardUntil) return;
         if (app.realtime.music.isPlaying) return;
         setMusicPlayback(true);
       });
       audio.addEventListener("pause", () => {
+        if (Date.now() < app.musicEventGuardUntil) return;
         if (!app.realtime.music.isPlaying) return;
         setMusicPlayback(false);
       });
-      audio.addEventListener("seeked", () => setMusicPlayback(!audio.paused));
-      audio.addEventListener("volumechange", () => setMusicPlayback(!audio.paused));
+      audio.addEventListener("seeked", () => {
+        if (Date.now() < app.musicEventGuardUntil) return;
+        setMusicPlayback(!audio.paused);
+      });
+      audio.addEventListener("volumechange", () => {
+        if (Date.now() < app.musicEventGuardUntil) return;
+        setMusicPlayback(!audio.paused);
+      });
     }
+  }
+
+  function musicStateSignature(music) {
+    return [
+      music.currentId || "",
+      music.url || "",
+      music.isPlaying ? "1" : "0",
+      Math.round(Number(music.currentTime || 0)),
+      Math.round(Number(music.volume || 0.65) * 100)
+    ].join("|");
   }
 
   function setTheme(theme) {
@@ -3562,6 +3610,8 @@
   }
 
   function notifyRemote(op) {
+    // [修复] 音乐播放/暂停/进度/音量属于高频状态，同步即可，不弹窗，避免“我同步了音乐播放器”刷屏。
+    if (op.type === "music.state") return;
     const actor = displayActor(op.actor, op.actor && op.actor.name);
     const map = {
       "legacy.replace": "更新了原有页面内容",
@@ -3571,7 +3621,6 @@
       "tree.water": "给恋爱小树浇了水",
       "doodle.stroke": "在涂鸦画板画了一笔",
       "doodle.saved": "把涂鸦保存到了相册",
-      "music.state": "同步了音乐播放器",
       "music.addTrack": "添加了一首音乐",
       "miss-you": "发送了思念提醒",
       "list.add": "更新了共享清单",
@@ -4545,13 +4594,27 @@
   }
 
   function toast(message) {
+    if (!message) return;
+    if (message === app.lastToastMessage && Date.now() - app.lastToastAt < 2800) return;
+    app.lastToastMessage = message;
+    app.lastToastAt = Date.now();
     try {
       if (typeof showToast === "function") {
         showToast(message);
+        trimToastStackSoon();
         return;
       }
     } catch (error) {}
     console.log(message);
+  }
+
+  function trimToastStackSoon() {
+    setTimeout(() => {
+      const wrap = document.querySelector(".toast-wrap");
+      if (!wrap) return;
+      const toasts = Array.from(wrap.querySelectorAll(".toast"));
+      toasts.slice(0, Math.max(0, toasts.length - 2)).forEach((node) => node.remove());
+    }, 40);
   }
 
   function esc(value) {

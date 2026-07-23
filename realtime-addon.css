@@ -1498,27 +1498,48 @@ html.rt-input-focus .bottom-nav.rt-five-nav {
 @media (max-width: 640px) {
   .app-shell {
     width: min(100% - 14px, 1180px);
-    padding-top: 156px;
-    padding-bottom: 22px;
+    padding-top: calc(86px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }
 
   .topbar {
+    position: relative;
+    top: auto;
+    z-index: 1;
     margin-top: 0;
   }
 
   .bottom-nav.rt-five-nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    top: 6px;
+    display: flex;
+    grid-template-columns: none;
+    gap: 7px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    top: calc(6px + env(safe-area-inset-top, 0px));
     left: 7px;
     right: 7px;
+    max-width: none;
     padding: 6px;
     border-radius: 20px;
+    scrollbar-width: none;
+  }
+
+  .bottom-nav.rt-five-nav::-webkit-scrollbar {
+    display: none;
   }
 
   .bottom-nav.rt-five-nav button {
-    min-height: 46px;
-    padding: 5px 6px;
+    flex: 0 0 auto;
+    min-width: 112px;
+    min-height: 44px;
+    padding: 5px 12px;
     font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .floating-backup {
+    display: none !important;
   }
 
   .rt-legacy-editor summary {
@@ -1555,6 +1576,24 @@ html.rt-input-focus .bottom-nav.rt-five-nav {
   }
 
   .toast-wrap {
-    bottom: 18px;
+    right: 7px;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    left: 7px;
+    width: auto;
+    max-height: 28vh;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .toast-wrap .toast {
+    padding: 10px 12px;
+    border: 2px solid var(--rt-ink-line);
+    border-radius: 18px;
+    font-size: 14px;
+    line-height: 1.35;
+  }
+
+  .toast-wrap .toast:nth-child(n+3) {
+    display: none;
   }
 }
